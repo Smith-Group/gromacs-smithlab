@@ -99,6 +99,10 @@ public:
         // Retrieve the Communication Record during simulations setup
         notifier->simulationSetupNotifier_.subscribe([this](const MpiComm& mpiComm)
                                                      { this->options_.setComm(mpiComm); });
+        // Retrieve the multi-simulation record, so PLUMED can be given the
+        // inter-replica communicator when this is a multi-simulation
+        notifier->simulationSetupNotifier_.subscribe([this](const gmx_multisim_t* ms)
+                                                     { this->options_.setMultiSim(ms); });
         // setting the simulation time step
         notifier->simulationSetupNotifier_.subscribe(
                 [this](const SimulationTimeStep& simulationTimeStep)

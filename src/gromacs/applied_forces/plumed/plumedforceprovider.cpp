@@ -45,6 +45,7 @@
 #include "gromacs/domdec/domdec_struct.h"
 #include "gromacs/math/units.h"
 #include "gromacs/mdrunutility/handlerestart.h"
+#include "gromacs/mdrunutility/multisim.h"
 #include "gromacs/mdtypes/enerdata.h"
 #include "gromacs/mdtypes/forceoutput.h"
 #include "gromacs/utility/exceptions.h"
@@ -119,6 +120,22 @@ try : plumed_(std::make_unique<PLMD::Plumed>())
         /* PLUMED reads this argument as an MPI_Comm*, so it must be handed the
            address of a communicator rather than the communicator itself. */
         MPI_Comm plumedComm = options.mpiComm_->comm();
+
+        /* In a multi-simulation, PLUMED also needs the INTER-replica communicator.
+           It is what populates PlumedMain::multi_sim_comm; without it that stays at
+           its default MPI_COMM_SELF, whose size is 1, and every replica concludes it
+           is replica 0 of 1 -- so multi-replica biases silently act on one replica.
+           GREX must be initialised before setMPIComm. */
+        if (isMultiSim(options.ms_))
+        {
+            if (options.mpiComm_->isMainRank())
+            {
+                plumed_->cmd("GREX setMPIIntercomm", const_cast<MPI_Comm*>(&options.ms_->mainRanksComm_));
+            }
+            plumed_->cmd("GREX setMPIIntracomm", &plumedComm);
+            plumed_->cmd("GREX init", nullptr);
+        }
+
         plumed_->cmd("setMPIComm", &plumedComm);
     }
 
