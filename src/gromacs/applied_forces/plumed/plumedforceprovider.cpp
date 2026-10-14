@@ -41,6 +41,8 @@
 
 #include "plumedforceprovider.h"
 
+#include "config.h"
+
 #include "gromacs/domdec/domdec.h"
 #include "gromacs/domdec/domdec_struct.h"
 #include "gromacs/math/units.h"
@@ -115,11 +117,22 @@ try : plumed_(std::make_unique<PLMD::Plumed>())
         }
     }
 
-    if (options.mpiComm_->isParallel())
+    /* buildMultiSimulation() rejects -multidir unless GROMACS was built with library
+       MPI, and MPI_COMM_SELF only exists there. With thread-MPI a parallel simulation
+       has already been rejected above, and a serial one needs no communicator, so
+       there is nothing to hand PLUMED in either case. */
+#if GMX_LIB_MPI
+    if (options.mpiComm_->isParallel() || isMultiSim(options.ms_))
     {
         /* PLUMED reads this argument as an MPI_Comm*, so it must be handed the
-           address of a communicator rather than the communicator itself. */
-        MPI_Comm plumedComm = options.mpiComm_->comm();
+           address of a communicator rather than the communicator itself.
+           MpiComm::comm() is MPI_COMM_NULL when the simulation has a single rank,
+           so a serial replica of a multi-simulation must use MPI_COMM_SELF. */
+        MPI_Comm plumedComm = MPI_COMM_SELF;
+        if (options.mpiComm_->isParallel())
+        {
+            plumedComm = options.mpiComm_->comm();
+        }
 
         /* In a multi-simulation, PLUMED also needs the INTER-replica communicator.
            It is what populates PlumedMain::multi_sim_comm; without it that stays at
@@ -136,8 +149,13 @@ try : plumed_(std::make_unique<PLMD::Plumed>())
             plumed_->cmd("GREX init", nullptr);
         }
 
-        plumed_->cmd("setMPIComm", &plumedComm);
+        /* A single-rank simulation leaves PLUMED at its serial default. */
+        if (options.mpiComm_->isParallel())
+        {
+            plumed_->cmd("setMPIComm", &plumedComm);
+        }
     }
+#endif
 
     plumed_->cmd("setNatoms", options.natoms_);
     plumed_->cmd("setMDEngine", "gromacs");
