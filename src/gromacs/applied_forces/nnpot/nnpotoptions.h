@@ -45,6 +45,7 @@
 #include "config.h"
 
 #include <string>
+#include <string_view>
 
 #include "gromacs/mdtypes/imdpoptionprovider.h"
 #include "gromacs/topology/atoms.h"
@@ -128,6 +129,9 @@ struct NNPotParameters
 class NNPotOptions final : public IMdpOptionProvider
 {
 public:
+    //! Implementation of IMdpOptionProvider method
+    std::string_view mdpSectionName() const override { return "applied-forces"; }
+
     //! Implementation of IMdpOptionProvider method
     void initMdpTransform(IKeyValueTreeTransformRules* /*rules*/) override;
 

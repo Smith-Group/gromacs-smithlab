@@ -49,6 +49,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "gromacs/commandline/filenm.h"
@@ -174,6 +175,8 @@ public:
     }
 
     // From IMdpOptionProvider
+    std::string_view mdpSectionName() const override { return "applied-forces"; }
+
     void initMdpTransform(IKeyValueTreeTransformRules* transform) override;
     void initMdpOptions(IOptionsContainerWithSections* options) override;
     void buildMdpOutput(KeyValueTreeObjectBuilder* builder) const override;

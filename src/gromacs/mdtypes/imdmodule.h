@@ -55,9 +55,8 @@ struct MDModulesNotifiers;
 /*! \libinternal \brief
  * Extension module for \Gromacs simulations.
  *
- * The methods that return other interfaces can in the future return null for
- * those interfaces that the module does not need to implement, but currently
- * the callers are not prepared to generically handle various cases.
+ * The methods that return other interfaces return null for those
+ * interfaces that the module does not implement.
  *
  *  See also:
  * - imdpprovider_test_helper.h: Provides a helper to populate IMdpOptionProviders from key-value trees for testing.

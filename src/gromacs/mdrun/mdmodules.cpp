@@ -37,9 +37,14 @@
 
 #include <cstdio>
 
+#include <algorithm>
+#include <array>
+#include <iterator>
 #include <memory>
-#include <unordered_map>
+#include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include "gromacs/applied_forces/colvars/colvarsMDModule.h"
 #include "gromacs/applied_forces/densityfitting/densityfitting.h"
@@ -72,82 +77,166 @@ struct gmx_output_env_t;
 namespace gmx
 {
 
+namespace
+{
+
+//! Creates a built-in module
+using ModuleFactory = std::unique_ptr<IMDModule> (*)();
+
+/*! \brief The built-in modules, in registration order.
+ *
+ * Modules are called in this order. Their mdp options are grouped by
+ * section in the same order, so reordering the table changes the layout
+ * of mdp output and of the parameters in tpr files. The order reproduces
+ * the mdp layout from before the table existed: the applied-forces
+ * modules, fast multipole method, output control, then the modules
+ * without mdp options.
+ */
+const std::array<std::pair<std::string_view, ModuleFactory>, 10> c_builtInModules = { {
+        { ElectricFieldModuleInfo::sc_name, &ElectricFieldModuleInfo::create },
+        { DensityFittingModuleInfo::sc_name, &DensityFittingModuleInfo::create },
+        { QMMMModuleInfo::sc_name, &QMMMModuleInfo::create },
+        { ColvarsModuleInfo::sc_name, &ColvarsModuleInfo::create },
+        { NNPotModuleInfo::sc_name, &NNPotModuleInfo::create },
+        { FmmModuleInfo::sc_name, &FmmModuleInfo::create },
+        { OutputControlModuleInfo::sc_name, &OutputControlModuleInfo::create },
+        { InteractiveMolecularDynamicsModuleInfo::sc_name, &InteractiveMolecularDynamicsModuleInfo::create },
+        { SwapCoordinatesModuleInfo::sc_name, &SwapCoordinatesModuleInfo::create },
+        { PlumedModuleInfo::sc_name, &PlumedModuleInfo::create },
+} };
+
+//! A module and the name it was registered under
+struct RegisteredModule
+{
+    //! Unique name of the module
+    std::string name;
+    //! The module
+    std::shared_ptr<IMDModule> module;
+};
+
+//! The mdp option providers that share one mdp section
+struct MdpSection
+{
+    //! Name of the section, empty for the top level
+    std::string name;
+    //! Providers in the section, in registration order
+    std::vector<IMdpOptionProvider*> providers;
+};
+
+} // namespace
+
 class MDModules::Impl : public IMDOutputProvider
 {
 public:
     Impl()
     {
-        modules_[std::string(DensityFittingModuleInfo::sc_name)] = DensityFittingModuleInfo::create();
-        modules_[std::string(ElectricFieldModuleInfo::sc_name)] = ElectricFieldModuleInfo::create();
-        modules_[std::string(InteractiveMolecularDynamicsModuleInfo::sc_name)] =
-                InteractiveMolecularDynamicsModuleInfo::create();
-        modules_[std::string(QMMMModuleInfo::sc_name)] = QMMMModuleInfo::create();
-        modules_[std::string(SwapCoordinatesModuleInfo::sc_name)] = SwapCoordinatesModuleInfo::create();
-        modules_[std::string(ColvarsModuleInfo::sc_name)]       = ColvarsModuleInfo::create();
-        modules_[std::string(PlumedModuleInfo::sc_name)]        = PlumedModuleInfo::create();
-        modules_[std::string(NNPotModuleInfo::sc_name)]         = NNPotModuleInfo::create();
-        modules_[std::string(FmmModuleInfo::sc_name)]           = FmmModuleInfo::create();
-        modules_[std::string(OutputControlModuleInfo::sc_name)] = OutputControlModuleInfo::create();
+        for (const auto& [name, create] : c_builtInModules)
+        {
+            add(name, create());
+        }
+    }
+
+    //! Registers \p module under \p name, after all modules registered so far
+    void add(std::string_view name, std::shared_ptr<IMDModule> module)
+    {
+        if (find(name) != nullptr)
+        {
+            GMX_THROW(APIError(
+                    formatString("Module with name %s already added", std::string(name).c_str())));
+        }
+        modules_.push_back({ std::string(name), std::move(module) });
+    }
+
+    //! Returns the module registered under \p name, or nullptr
+    IMDModule* find(std::string_view name) const
+    {
+        const auto found =
+                std::find_if(modules_.begin(),
+                             modules_.end(),
+                             [name](const RegisteredModule& entry) { return entry.name == name; });
+        return found != modules_.end() ? found->module.get() : nullptr;
+    }
+
+    //! Returns the output control module, which every MDModules has
+    IMDModule* outputControlModule() const
+    {
+        IMDModule* module = find(OutputControlModuleInfo::sc_name);
+        GMX_RELEASE_ASSERT(module, "The output control module is always registered");
+        return module;
+    }
+
+    /*! \brief Returns the mdp sections of all modules.
+     *
+     * Sections are in the order their first module was registered, and
+     * the providers within a section in registration order. Modules
+     * without an mdp option provider are skipped.
+     */
+    std::vector<MdpSection> mdpSections() const
+    {
+        std::vector<MdpSection> sections;
+        for (const auto& entry : modules_)
+        {
+            IMdpOptionProvider* provider = entry.module->mdpOptionProvider();
+            if (provider == nullptr)
+            {
+                continue;
+            }
+            const std::string_view sectionName = provider->mdpSectionName();
+
+            auto section = std::find_if(sections.begin(),
+                                        sections.end(),
+                                        [sectionName](const MdpSection& existing)
+                                        { return existing.name == sectionName; });
+            if (section == sections.end())
+            {
+                sections.push_back({ std::string(sectionName), {} });
+                section = std::prev(sections.end());
+            }
+            section->providers.push_back(provider);
+        }
+        return sections;
     }
 
     void makeModuleOptions(Options* options) const
     {
-        // TODO When we have mdp option providers other than
-        // applied-forces modules, do we need to extend IMdpOptions to
-        // return an optional section name, like "applied-forces"?
-        // What value does it provide other than prepending a string?
-        // Can we handle it differently?
-
-        // Create a section for applied-forces modules
-        auto appliedForcesOptions = options->addSection(OptionSection("applied-forces"));
-        for (std::string_view moduleName : { ElectricFieldModuleInfo::sc_name,
-                                             DensityFittingModuleInfo::sc_name,
-                                             QMMMModuleInfo::sc_name,
-                                             ColvarsModuleInfo::sc_name,
-                                             NNPotModuleInfo::sc_name })
+        for (const auto& section : mdpSections())
         {
-            IMDModule*          module            = modules_.at(std::string(moduleName)).get();
-            IMdpOptionProvider* mdpOptionProvider = module->mdpOptionProvider();
-            GMX_RELEASE_ASSERT(mdpOptionProvider,
-                               "Applied-forces modules all implement MDP options");
-            mdpOptionProvider->initMdpOptions(&appliedForcesOptions);
+            if (section.name.empty())
+            {
+                for (IMdpOptionProvider* provider : section.providers)
+                {
+                    provider->initMdpOptions(options);
+                }
+            }
+            else
+            {
+                auto sectionOptions = options->addSection(OptionSection(section.name.c_str()));
+                for (IMdpOptionProvider* provider : section.providers)
+                {
+                    provider->initMdpOptions(&sectionOptions);
+                }
+            }
         }
-
-        auto       fmmModuleOptions = options->addSection(OptionSection("fast-multipole-method"));
-        IMDModule* fmmModule        = modules_.at(std::string(FmmModuleInfo::sc_name)).get();
-        IMdpOptionProvider* fmmMdpOptionProvider = fmmModule->mdpOptionProvider();
-        GMX_RELEASE_ASSERT(fmmMdpOptionProvider,
-                           "Fast-multipole-method module must implement MDP options");
-        fmmMdpOptionProvider->initMdpOptions(&fmmModuleOptions);
-
-        // Output control module
-        IMDModule* outputControlModule = modules_.at(std::string(OutputControlModuleInfo::sc_name)).get();
-        IMdpOptionProvider* outputControlMdpOptionProvider = outputControlModule->mdpOptionProvider();
-        GMX_RELEASE_ASSERT(outputControlMdpOptionProvider,
-                           "Output control module must implement MDP options");
-        outputControlMdpOptionProvider->initMdpOptions(options);
-
-        // In future, other sections would also go here.
     }
 
     // From IMDOutputProvider
     void initOutput(FILE* fplog, int nfile, const t_filenm fnm[], bool bAppendFiles, const gmx_output_env_t* oenv) override
     {
-        for (auto& [_, module] : modules_)
+        for (const auto& entry : modules_)
         {
-            if (module->outputProvider())
+            if (entry.module->outputProvider())
             {
-                module->outputProvider()->initOutput(fplog, nfile, fnm, bAppendFiles, oenv);
+                entry.module->outputProvider()->initOutput(fplog, nfile, fnm, bAppendFiles, oenv);
             }
         }
     }
     void finishOutput() override
     {
-        for (auto& [_, module] : modules_)
+        for (const auto& entry : modules_)
         {
-            if (module->outputProvider())
+            if (entry.module->outputProvider())
             {
-                module->outputProvider()->finishOutput();
+                entry.module->outputProvider()->finishOutput();
             }
         }
     }
@@ -161,8 +250,8 @@ public:
 
     std::unique_ptr<ForceProviders> forceProviders_;
 
-    /*! \brief List of registered MDModules */
-    std::unordered_map<std::string, std::shared_ptr<IMDModule>> modules_;
+    /*! \brief Registered modules, in registration order */
+    std::vector<RegisteredModule> modules_;
 };
 
 MDModules::MDModules() : impl_(new Impl) {}
@@ -171,64 +260,37 @@ MDModules::~MDModules() {}
 
 void MDModules::initMdpTransform(IKeyValueTreeTransformRules* rules)
 {
-    auto appliedForcesScope = rules->scopedTransform("/applied-forces");
-    for (std::string_view moduleName : { ElectricFieldModuleInfo::sc_name,
-                                         DensityFittingModuleInfo::sc_name,
-                                         QMMMModuleInfo::sc_name,
-                                         ColvarsModuleInfo::sc_name,
-                                         NNPotModuleInfo::sc_name })
+    for (const auto& section : impl_->mdpSections())
     {
-        IMDModule*          module            = impl_->modules_.at(std::string(moduleName)).get();
-        IMdpOptionProvider* mdpOptionProvider = module->mdpOptionProvider();
-        GMX_RELEASE_ASSERT(mdpOptionProvider, "Applied-forces modules all implement MDP options");
-        mdpOptionProvider->initMdpTransform(appliedForcesScope.rules());
+        if (section.name.empty())
+        {
+            for (IMdpOptionProvider* provider : section.providers)
+            {
+                provider->initMdpTransform(rules);
+            }
+        }
+        else
+        {
+            auto scope = rules->scopedTransform("/" + section.name);
+            for (IMdpOptionProvider* provider : section.providers)
+            {
+                provider->initMdpTransform(scope.rules());
+            }
+        }
     }
-
-    auto                fmmScope  = rules->scopedTransform("/fast-multipole-method");
-    IMDModule*          fmmModule = impl_->modules_.at(std::string(FmmModuleInfo::sc_name)).get();
-    IMdpOptionProvider* fmmMdpOptionProvider = fmmModule->mdpOptionProvider();
-    GMX_RELEASE_ASSERT(fmmMdpOptionProvider,
-                       "Fast-multipole-method module must implement MDP options");
-    fmmMdpOptionProvider->initMdpTransform(fmmScope.rules());
-
-    // OutputControl module handles transform at top level (not in a scoped section)
-    IMDModule* outputControlModule =
-            impl_->modules_.at(std::string(OutputControlModuleInfo::sc_name)).get();
-    IMdpOptionProvider* outputControlMdpOptionProvider = outputControlModule->mdpOptionProvider();
-    GMX_RELEASE_ASSERT(outputControlMdpOptionProvider,
-                       "OutputControl module must implement MDP options");
-    outputControlMdpOptionProvider->initMdpTransform(rules);
 }
 
 void MDModules::buildMdpOutput(KeyValueTreeObjectBuilder* builder)
 {
-    // OutputControl module outputs first (not in applied-forces section)
-    IMDModule* outputControlModule =
-            impl_->modules_.at(std::string(OutputControlModuleInfo::sc_name)).get();
-    const IMdpOptionProvider* outputControlMdpOptionProvider = outputControlModule->mdpOptionProvider();
-    GMX_RELEASE_ASSERT(outputControlMdpOptionProvider,
-                       "OutputControl module must implement MDP options");
-    outputControlMdpOptionProvider->buildMdpOutput(builder);
-
-    // Note that the order here should be kept stable so that the
-    // fields in the mdp output file appear in a reliable order.
-    for (std::string_view moduleName : { ElectricFieldModuleInfo::sc_name,
-                                         DensityFittingModuleInfo::sc_name,
-                                         QMMMModuleInfo::sc_name,
-                                         ColvarsModuleInfo::sc_name,
-                                         NNPotModuleInfo::sc_name })
+    // The order here is the order of the fields in the mdp output file,
+    // so it follows the sections, as the options do.
+    for (const auto& section : impl_->mdpSections())
     {
-        IMDModule*                module = impl_->modules_.at(std::string(moduleName)).get();
-        const IMdpOptionProvider* mdpOptionProvider = module->mdpOptionProvider();
-        GMX_RELEASE_ASSERT(mdpOptionProvider, "Applied-forces modules all implement MDP options");
-        mdpOptionProvider->buildMdpOutput(builder);
+        for (const IMdpOptionProvider* provider : section.providers)
+        {
+            provider->buildMdpOutput(builder);
+        }
     }
-
-    IMDModule* fmmModule = impl_->modules_.at(std::string(FmmModuleInfo::sc_name)).get();
-    const IMdpOptionProvider* fmmMdpOptionProvider = fmmModule->mdpOptionProvider();
-    GMX_RELEASE_ASSERT(fmmMdpOptionProvider,
-                       "Fast-multipole-method module must implement MDP options");
-    fmmMdpOptionProvider->buildMdpOutput(builder);
 }
 
 void MDModules::assignOptionsToModules(const KeyValueTreeObject&  params,
@@ -240,8 +302,7 @@ void MDModules::assignOptionsToModules(const KeyValueTreeObject&  params,
     if (inputrec)
     {
         // Route OutputControl sub-object to output-control module
-        IMDModule* outputControlModule =
-                impl_->modules_.at(std::string(OutputControlModuleInfo::sc_name)).get();
+        IMDModule* outputControlModule = impl_->outputControlModule();
         setOutputControlTarget(outputControlModule, &inputrec->outputControl);
 
         // Set preprocessing strings if provided
@@ -271,8 +332,7 @@ void MDModules::adjustInputrecBasedOnModules(t_inputrec* ir, bool routeSubObject
     if (routeSubObjects)
     {
         // Route OutputControl sub-object to output-control module
-        IMDModule* outputControlModule =
-                impl_->modules_.at(std::string(OutputControlModuleInfo::sc_name)).get();
+        IMDModule* outputControlModule = impl_->outputControlModule();
         setOutputControlTarget(outputControlModule, &ir->outputControl);
 
         // Set preprocessing strings if provided so preprocessing-only options are registered
@@ -306,45 +366,40 @@ ForceProviders* MDModules::initForceProviders(gmx_wallcycle* wallCycle)
     GMX_RELEASE_ASSERT(impl_->forceProviders_ == nullptr,
                        "Force providers initialized multiple times");
     impl_->forceProviders_ = std::make_unique<ForceProviders>(wallCycle);
-    for (auto& [_, module] : impl_->modules_)
+    for (const auto& entry : impl_->modules_)
     {
-        module->initForceProviders(impl_->forceProviders_.get());
+        entry.module->initForceProviders(impl_->forceProviders_.get());
     }
     return impl_->forceProviders_.get();
 }
 
 void MDModules::subscribeToPreProcessingNotifications()
 {
-    for (auto& [_, module] : impl_->modules_)
+    for (const auto& entry : impl_->modules_)
     {
-        module->subscribeToPreProcessingNotifications(&impl_->notifiers_);
+        entry.module->subscribeToPreProcessingNotifications(&impl_->notifiers_);
     }
 }
 
 void MDModules::subscribeToSimulationSetupNotifications()
 {
-    for (auto& [_, module] : impl_->modules_)
+    for (const auto& entry : impl_->modules_)
     {
-        module->subscribeToSimulationSetupNotifications(&impl_->notifiers_);
+        entry.module->subscribeToSimulationSetupNotifications(&impl_->notifiers_);
     }
 }
 
 void MDModules::subscribeToSimulationRunNotifications()
 {
-    for (auto& [_, module] : impl_->modules_)
+    for (const auto& entry : impl_->modules_)
     {
-        module->subscribeToSimulationRunNotifications(&impl_->notifiers_);
+        entry.module->subscribeToSimulationRunNotifications(&impl_->notifiers_);
     }
 }
 
-void MDModules::add(std::string_view nameView, std::shared_ptr<IMDModule> module)
+void MDModules::add(std::string_view name, std::shared_ptr<IMDModule> module)
 {
-    const std::string name(nameView);
-    if (impl_->modules_.find(name) != impl_->modules_.end())
-    {
-        GMX_THROW(APIError(formatString("Module with name %s already added", name.c_str())));
-    }
-    impl_->modules_[name] = std::move(module);
+    impl_->add(name, std::move(module));
 }
 
 const MDModulesNotifiers& MDModules::notifiers()

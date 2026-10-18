@@ -44,6 +44,7 @@
 
 #include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "gromacs/mdrunutility/mdmodulesnotifiers.h"
@@ -76,6 +77,9 @@ class KeyValueTreeObjectBuilder;
 class ColvarsOptions final : public IMdpOptionProvider
 {
 public:
+    //! From IMdpOptionProvider
+    std::string_view mdpSectionName() const override { return "applied-forces"; }
+
     //! From IMdpOptionProvider
     void initMdpTransform(IKeyValueTreeTransformRules* rules) override;
 

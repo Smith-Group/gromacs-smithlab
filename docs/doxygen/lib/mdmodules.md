@@ -101,6 +101,15 @@ of the options module, the module needs to declare local variables where the
 values from the options will be assigned.  The defined structure will also be
 used for storing in the tpr file (see below).
 
+mdpSectionName() names the section of the structured input that holds the
+options of the module, e.g. `applied-forces`; the flat mdp file has no
+sections.  The framework creates the section, so initMdpOptions() and
+initMdpTransform() see only their own part of it.  Modules that return the
+same name share the section, so their option names must differ.  The
+framework calls the modules section by section and, within a section, in the
+order they are registered with gmx::MDModules; this is also the order of the
+fields in mdout.mdp.  An empty name places the options at the top level.
+
 initMdpTransform() should declare the mapping from current flat mdp format to
 the structured format defined in initMdpOptions().  For now, this makes it
 possible to have an internal forward-looking structured representation while

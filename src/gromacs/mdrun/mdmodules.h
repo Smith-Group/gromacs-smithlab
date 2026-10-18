@@ -227,6 +227,11 @@ public:
      * may attempt to use its the interfaces accessible through IMDModule
      * methods.
      *
+     * The module is registered after all modules registered so far,
+     * and is treated like a built-in module: if it provides mdp
+     * options, they are placed in the section of the structured input
+     * that it names with IMdpOptionProvider::mdpSectionName().
+     *
      * \param name   Unique name for this module in the collection
      * \param module Implements some sort of modular functionality for MD.
      *

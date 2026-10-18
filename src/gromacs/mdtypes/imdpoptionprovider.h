@@ -43,6 +43,8 @@
 #ifndef GMX_MDTYPES_IMDPOPTIONPROVIDER_H
 #define GMX_MDTYPES_IMDPOPTIONPROVIDER_H
 
+#include <string_view>
+
 namespace gmx
 {
 
@@ -80,6 +82,22 @@ class IMdpOptionProvider
 {
 public:
     /*! \brief
+     * Returns the name of the section of the structured input that holds
+     * the options of this module.
+     *
+     * The mdp file is flat. initMdpTransform() maps mdp keys into this
+     * section: its rules are scoped to it, so in section "applied-forces"
+     * a rule to "/x/y" lands at "/applied-forces/x/y". The resulting tree
+     * is what assignOptionsToModules() reads and what the tpr stores.
+     * Modules that return the same name share the section, so their
+     * option names must differ.
+     * initMdpTransform(), initMdpOptions() and buildMdpOutput() are called
+     * section by section and, within a section, in the order the modules
+     * were registered with MDModules; this is also the order of the fields
+     * in mdout.mdp. An empty name places the options at the top level.
+     */
+    virtual std::string_view mdpSectionName() const = 0;
+    /*! \brief
      * Initializes a transform from mdp values to sectioned options.
      *
      * The transform is specified from a flat KeyValueTreeObject that
@@ -114,7 +132,7 @@ protected:
     IMdpOptionProvider& operator=(IMdpOptionProvider&&) noexcept = default;
     //! \}
 
-    virtual ~IMdpOptionProvider() {}
+    ~IMdpOptionProvider() {}
 };
 
 } // namespace gmx
