@@ -206,6 +206,10 @@ public:
      * Allows MDModules to subscribe to notifications that are called back
      * during the set up of an MD simulation, after the options were
      * assigned to the modules.
+     *
+     * \throws APIError When a module subscribes to the multi-simulation
+     *     notification without declaring that it shares state across
+     *     simulations, see MDModuleDescriptor.
      */
     void subscribeToSimulationSetupNotifications();
 
@@ -244,6 +248,22 @@ public:
      * \throws APIError When a module with the given name is already added
      */
     void add(std::string_view name, std::shared_ptr<IMDModule> module);
+
+    /*! \brief Returns whether a module declares that it shares state
+     * across the simulations of a multi-simulation run.
+     *
+     * Valid after the options were assigned to the modules.
+     */
+    bool anyModuleSharesStateAcrossSimulations() const;
+
+    /*! \brief Returns whether a module declares that it provides the
+     * direct Coulomb interactions.
+     *
+     * Valid after the options were assigned to the modules.
+     *
+     * \throws APIError When more than one module declares it
+     */
+    bool anyModuleProvidesDirectCoulomb() const;
 
     /*! \brief Return a handle to the notifiers used for callbacks between modules.
      */

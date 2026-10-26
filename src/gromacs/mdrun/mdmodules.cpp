@@ -383,9 +383,19 @@ void MDModules::subscribeToPreProcessingNotifications()
 
 void MDModules::subscribeToSimulationSetupNotifications()
 {
+    const auto& setupNotifier = impl_->notifiers_.simulationSetupNotifier_;
     for (const auto& entry : impl_->modules_)
     {
+        const int numMultisimSubscribers = setupNotifier.numSubscribers<const gmx_multisim_t*>();
         entry.module->subscribeToSimulationSetupNotifications(&impl_->notifiers_);
+        if (setupNotifier.numSubscribers<const gmx_multisim_t*>() > numMultisimSubscribers
+            && !entry.module->descriptor().sharesStateAcrossSimulations)
+        {
+            GMX_THROW(APIError(
+                    formatString("Module %s subscribed to the multi-simulation notification "
+                                 "without declaring that it shares state across simulations",
+                                 entry.name.c_str())));
+        }
     }
 }
 
@@ -400,6 +410,35 @@ void MDModules::subscribeToSimulationRunNotifications()
 void MDModules::add(std::string_view name, std::shared_ptr<IMDModule> module)
 {
     impl_->add(name, std::move(module));
+}
+
+bool MDModules::anyModuleSharesStateAcrossSimulations() const
+{
+    return std::any_of(impl_->modules_.begin(),
+                       impl_->modules_.end(),
+                       [](const RegisteredModule& entry)
+                       { return entry.module->descriptor().sharesStateAcrossSimulations; });
+}
+
+bool MDModules::anyModuleProvidesDirectCoulomb() const
+{
+    const RegisteredModule* provider = nullptr;
+    for (const auto& entry : impl_->modules_)
+    {
+        if (entry.module->descriptor().providesDirectCoulomb)
+        {
+            if (provider != nullptr)
+            {
+                GMX_THROW(APIError(
+                        formatString("Modules %s and %s both declare that they provide the "
+                                     "direct Coulomb interactions",
+                                     provider->name.c_str(),
+                                     entry.name.c_str())));
+            }
+            provider = &entry;
+        }
+    }
+    return provider != nullptr;
 }
 
 const MDModulesNotifiers& MDModules::notifiers()

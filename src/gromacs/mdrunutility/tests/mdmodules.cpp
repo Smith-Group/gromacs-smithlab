@@ -49,6 +49,7 @@
 #include <gtest/gtest.h>
 
 #include "gromacs/applied_forces/electricfield.h"
+#include "gromacs/mdrunutility/mdmodulesnotifiers.h"
 #include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/mdtypes/imdoutputprovider.h"
 #include "gromacs/mdtypes/imdpoptionprovider.h"
@@ -120,6 +121,36 @@ public:
     void subscribeToPreProcessingNotifications(MDModulesNotifiers* /* notifiers */) override {}
     void subscribeToSimulationSetupNotifications(MDModulesNotifiers* /* notifiers */) override {}
     void subscribeToSimulationRunNotifications(MDModulesNotifiers* /* notifiers */) override {}
+};
+
+//! A module that declares what the test puts in \c descriptor_, and may subscribe to the multi-simulation notification
+class DeclaringTestModule final : public IMDModule
+{
+public:
+    explicit DeclaringTestModule(bool subscribesToMultisim) :
+        subscribesToMultisim_(subscribesToMultisim)
+    {
+    }
+
+    MDModuleDescriptor  descriptor() const override { return descriptor_; }
+    IMdpOptionProvider* mdpOptionProvider() override { return nullptr; }
+    IMDOutputProvider*  outputProvider() override { return nullptr; }
+    void                initForceProviders(ForceProviders* /* forceProviders */) override {}
+    void subscribeToPreProcessingNotifications(MDModulesNotifiers* /* notifiers */) override {}
+    void subscribeToSimulationSetupNotifications(MDModulesNotifiers* notifiers) override
+    {
+        if (subscribesToMultisim_)
+        {
+            notifiers->simulationSetupNotifier_.subscribe([](const gmx_multisim_t* /* ms */) {});
+        }
+    }
+    void subscribeToSimulationRunNotifications(MDModulesNotifiers* /* notifiers */) override {}
+
+    //! What the module declares
+    MDModuleDescriptor descriptor_;
+
+private:
+    bool subscribesToMultisim_;
 };
 
 //! Transforms flat mdp-style \c input with the rules of all modules in \c mdModules
@@ -208,6 +239,48 @@ TEST(MDModulesTest, RejectsDuplicateModuleName)
     EXPECT_THROW(mdModules.add("test", std::make_shared<EmptyTestModule>()), APIError);
     EXPECT_THROW(mdModules.add(ElectricFieldModuleInfo::sc_name, std::make_shared<EmptyTestModule>()),
                  APIError);
+}
+
+TEST(MDModulesTest, RejectsMultisimSubscriptionWithoutDeclaration)
+{
+    MDModules mdModules;
+    mdModules.add("test", std::make_shared<DeclaringTestModule>(true));
+
+    const KeyValueTreeObject params = transformMdpInput(&mdModules, KeyValueTreeBuilder().build());
+    t_inputrec               ir;
+    mdModules.assignOptionsToModules(params, nullptr, &ir);
+    EXPECT_FALSE(mdModules.anyModuleSharesStateAcrossSimulations());
+    EXPECT_THROW(mdModules.subscribeToSimulationSetupNotifications(), APIError);
+}
+
+TEST(MDModulesTest, AcceptsDeclaredMultisimSubscription)
+{
+    MDModules mdModules;
+    auto      module                                 = std::make_shared<DeclaringTestModule>(true);
+    module->descriptor_.sharesStateAcrossSimulations = true;
+    mdModules.add("test", module);
+
+    const KeyValueTreeObject params = transformMdpInput(&mdModules, KeyValueTreeBuilder().build());
+    t_inputrec               ir;
+    mdModules.assignOptionsToModules(params, nullptr, &ir);
+    EXPECT_NO_THROW(mdModules.subscribeToSimulationSetupNotifications());
+    EXPECT_TRUE(mdModules.anyModuleSharesStateAcrossSimulations());
+}
+
+TEST(MDModulesTest, RejectsTwoDirectCoulombProviders)
+{
+    MDModules mdModules;
+    EXPECT_FALSE(mdModules.anyModuleProvidesDirectCoulomb());
+
+    auto first                               = std::make_shared<DeclaringTestModule>(false);
+    first->descriptor_.providesDirectCoulomb = true;
+    mdModules.add("first", first);
+    EXPECT_TRUE(mdModules.anyModuleProvidesDirectCoulomb());
+
+    auto second                               = std::make_shared<DeclaringTestModule>(false);
+    second->descriptor_.providesDirectCoulomb = true;
+    mdModules.add("second", second);
+    EXPECT_THROW(mdModules.anyModuleProvidesDirectCoulomb(), APIError);
 }
 
 } // namespace

@@ -86,6 +86,14 @@ class changes. The `virtual` keyword should not be specified,
 because this is redundant when `override` is used. This follows
 the Cpp Core Guidelines (guideline C.128).
 
+What the host has to know about a module, it reads from the
+gmx::MDModuleDescriptor that `descriptor()` returns, after the mdp
+options have been assigned to the module: whether the module couples
+the simulations of a multi-simulation run, and whether it provides the
+direct Coulomb interactions. The host does not infer these from what
+the module subscribes to; a module that subscribes to the
+multi-simulation notification without declaring it is refused at setup.
+
 Handling mdp input
 ------------------
 

@@ -265,13 +265,18 @@ public:
 class SimulatorModules
 {
 public:
-    SimulatorModules(IMDOutputProvider* mdOutputProvider, const MDModulesNotifiers& notifiers) :
-        outputProvider(mdOutputProvider), mdModulesNotifiers(notifiers)
+    SimulatorModules(IMDOutputProvider*        mdOutputProvider,
+                     const MDModulesNotifiers& notifiers,
+                     bool                      anyModuleSharesStateAcrossSimulations) :
+        outputProvider(mdOutputProvider),
+        mdModulesNotifiers(notifiers),
+        anyModuleSharesStateAcrossSimulations(anyModuleSharesStateAcrossSimulations)
     {
     }
 
     IMDOutputProvider*        outputProvider;
     const MDModulesNotifiers& mdModulesNotifiers;
+    bool                      anyModuleSharesStateAcrossSimulations;
 };
 
 class CenterOfMassPulling

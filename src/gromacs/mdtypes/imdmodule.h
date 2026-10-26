@@ -53,6 +53,31 @@ class IMdpOptionProvider;
 struct MDModulesNotifiers;
 
 /*! \libinternal \brief
+ * What a module declares about itself for this run.
+ *
+ * The host reads the declarations after the mdp options have been
+ * assigned to the modules, so a module can derive them from its
+ * options. Fields are only ever appended to this struct.
+ *
+ * \inlibraryapi
+ * \ingroup module_mdtypes
+ */
+struct MDModuleDescriptor
+{
+    /*! \brief Whether the module couples the simulations of a multi-simulation run.
+     *
+     * The simulations then act in lockstep: checkpoints and stop
+     * conditions are communicated between them. A module that
+     * subscribes to the gmx_multisim_t notification has to declare this.
+     */
+    bool sharesStateAcrossSimulations = false;
+    /*! \brief Whether the module computes the direct (short-range) Coulomb
+     * interactions instead of the nonbonded kernels. At most one module may.
+     */
+    bool providesDirectCoulomb = false;
+};
+
+/*! \libinternal \brief
  * Extension module for \Gromacs simulations.
  *
  * The methods that return other interfaces return null for those
@@ -70,6 +95,12 @@ class IMDModule
 public:
     virtual ~IMDModule() {}
 
+    /*! \brief Returns what the module declares about itself for this run.
+     *
+     * Called after the mdp options have been assigned to the module.
+     * The default declares nothing.
+     */
+    virtual MDModuleDescriptor descriptor() const { return {}; }
     //! Returns an interface for handling mdp input (and tpr I/O).
     virtual IMdpOptionProvider* mdpOptionProvider() = 0;
     //! Returns an interface for handling output files during simulation.

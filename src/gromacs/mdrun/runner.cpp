@@ -1857,8 +1857,6 @@ int Mdrunner::mdrunner()
         setupNotifier.notify(EnsembleTemperature{ *inputrec });
         PlainPairlistRanges plainPairlistRanges(mtop, *inputrec);
         setupNotifier.notify(&plainPairlistRanges);
-        MDModulesDirectProvider mdModuleCoulombDirectProvider;
-        setupNotifier.notify(&mdModuleCoulombDirectProvider);
 
         /* Initiate forcerecord */
         if (deviceStreamManager != nullptr)
@@ -1872,20 +1870,12 @@ int Mdrunner::mdrunner()
         }
         fr->forceProviders = mdModules_->initForceProviders(wcycle.get());
 
-        std::optional<bool> anMDModuleProvidesDirectCoulomb = mdModuleCoulombDirectProvider.isDirectProvider;
-        if (setupNotifier.haveSubscribers<MDModulesDirectProvider*>()
-            && !anMDModuleProvidesDirectCoulomb.has_value())
+        // A module that declares that it provides the direct Coulomb interactions
+        // replaces the nonbonded kernels for them; without one, no choice is made.
+        std::optional<bool> anMDModuleProvidesDirectCoulomb;
+        if (mdModules_->anyModuleProvidesDirectCoulomb())
         {
-            GMX_THROW(APIError(
-                    "At least one MD module subscribed to the direct provider notification, "
-                    "but none reported whether it provides direct interactions."));
-        }
-        if (!setupNotifier.haveSubscribers<MDModulesDirectProvider*>()
-            && anMDModuleProvidesDirectCoulomb.has_value())
-        {
-            GMX_THROW(
-                    APIError("No MD module subscribed to the direct provider notification, "
-                             "but direct interactions provider is reported."));
+            anMDModuleProvidesDirectCoulomb = true;
         }
 
         logValidationMessages(mdlog,
@@ -2430,7 +2420,9 @@ int Mdrunner::mdrunner()
                     static_cast<int>(filenames.size()), filenames.data(), inputrec.get(), fr.get()));
             simulatorBuilder.add(ReplicaExchangeParameters(replExParams));
             simulatorBuilder.add(InteractiveMD(imdSession.get()));
-            simulatorBuilder.add(SimulatorModules(mdModules_->outputProvider(), mdModules_->notifiers()));
+            simulatorBuilder.add(SimulatorModules(mdModules_->outputProvider(),
+                                                  mdModules_->notifiers(),
+                                                  mdModules_->anyModuleSharesStateAcrossSimulations()));
             simulatorBuilder.add(CenterOfMassPulling(pull_work));
             // Todo move to an MDModule
             simulatorBuilder.add(IonSwapping(swap.get()));

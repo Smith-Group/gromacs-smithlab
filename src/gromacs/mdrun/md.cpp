@@ -286,10 +286,8 @@ void LegacySimulator::do_md()
 
     t_fcdata& fcdata = *fr_->fcdata;
 
-    // We should let all special algorithms use MDModules, so notifiers tells if we need to share
-    bool simulationsShareState =
-            (ms_ != nullptr)
-            && mdModulesNotifiers_.simulationSetupNotifier_.haveSubscribers<const gmx_multisim_t*>();
+    // We should let all special algorithms use MDModules, which declare if we need to share
+    bool simulationsShareState       = (ms_ != nullptr) && anyModuleSharesStateAcrossSimulations_;
     bool simulationsShareHamiltonian = false;
     int  nstSignalComm               = nstglobalcomm;
     {
