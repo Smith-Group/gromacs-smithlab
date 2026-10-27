@@ -267,10 +267,10 @@ class SimulatorModules
 public:
     SimulatorModules(IMDOutputProvider*        mdOutputProvider,
                      const MDModulesNotifiers& notifiers,
-                     bool                      anyModuleSharesStateAcrossSimulations) :
+                     bool                      sharesStateAcrossSimulations) :
         outputProvider(mdOutputProvider),
         mdModulesNotifiers(notifiers),
-        anyModuleSharesStateAcrossSimulations(anyModuleSharesStateAcrossSimulations)
+        anyModuleSharesStateAcrossSimulations(sharesStateAcrossSimulations)
     {
     }
 
