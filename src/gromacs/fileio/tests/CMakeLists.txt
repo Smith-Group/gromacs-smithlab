@@ -41,6 +41,7 @@ gmx_add_unit_test(FileIOTests fileio-test
         cifio_trajectory.cpp
         conect.cpp
         confio.cpp
+        fileformatregistry.cpp
         filemd5.cpp
         filetypes.cpp
         matio.cpp

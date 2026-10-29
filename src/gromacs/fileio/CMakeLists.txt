@@ -39,6 +39,8 @@ set(FILEIO_SOURCES
     confio.cpp
     enxio.cpp
     espio.cpp
+    file.cpp
+    fileformatregistry.cpp
     filetypes.cpp
     g96io.cpp
     gmxfio.cpp
