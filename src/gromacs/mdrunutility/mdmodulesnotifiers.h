@@ -63,6 +63,7 @@
 struct gmx_mtop_t;
 class WarningHandler;
 enum class PbcType : int;
+enum class InteractionFunction : int;
 struct t_inputrec;
 struct gmx_multisim_t;
 
@@ -191,34 +192,15 @@ struct MDModulesPairlistConstructedSignal
     ArrayRef<const int> atomTypes_;
 };
 
-/*! \libinternal \brief Check if module outputs energy to a specific field.
+/*! \libinternal \brief The energy terms that modules write.
  *
- * Ensures that energy is output for this module.
+ * MDModules fills it from the energy terms the modules declare in
+ * their MDModuleDescriptor.
  */
-struct MDModulesEnergyOutputToDensityFittingRequestChecker
+struct MDModulesEnergyTerms
 {
-    //! Trigger output to density fitting energy field
-    bool energyOutputToDensityFitting_ = false;
-};
-
-/*! \libinternal \brief Check if QMMM module outputs energy to a specific field.
- *
- * Ensures that energy is output for QMMM module.
- */
-struct MDModulesEnergyOutputToQMMMRequestChecker
-{
-    //! Trigger output to QMMM energy field
-    bool energyOutputToQMMM_ = false;
-};
-
-/*! \libinternal \brief Check if NNPot module outputs energy to a specific field.
- *
- * Ensures that energy is output for NNPot module.
- */
-struct MDModulesEnergyOutputToNNPotRequestChecker
-{
-    //! Trigger output to NNPot energy field
-    bool energyOutputToNNPot_ = false;
+    //! The declared energy terms, in module registration order
+    std::vector<InteractionFunction> terms_;
 };
 
 /*! \libinternal
@@ -475,15 +457,8 @@ struct MDModulesNotifiers
      * \tparam MDLogger&            Allows MdModule to use standard logging class for messages
      *                              output
      * \tparam gmx_mtop_t&          Provides the topology of the system to the modules
-     * \tparam MDModulesEnergyOutputToDensityFittingRequestChecker*
-     *                              Enables modules to report if they want to write their
-     *                              energy output to the density fitting field in the energy files
-     * \tparam MDModulesEnergyOutputToQMMMRequestChecker*
-     *                              Enables QMMM module to report if it wants to write its energy
-     *                              output to the "Quantum En." field in the energy files
-     * \tparam MDModulesEnergyOutputToNNPotRequestChecker*
-     *                              Enables NNPot module to report if it wants to write its energy
-     *                              output to the "NN Potential" field in the energy files
+     * \tparam MDModulesEnergyTerms* Answered by MDModules with the energy terms the modules
+     *                              declare, to be written to the energy files
      * \tparam SeparatePmeRanksPermitted*
      *                              Enables modules to report if they want to disable dedicated
      *                              PME ranks
@@ -512,9 +487,7 @@ struct MDModulesNotifiers
                            const StartingBehavior&,
                            const MDLogger&,
                            const gmx_mtop_t&,
-                           MDModulesEnergyOutputToDensityFittingRequestChecker*,
-                           MDModulesEnergyOutputToQMMMRequestChecker*,
-                           MDModulesEnergyOutputToNNPotRequestChecker*,
+                           MDModulesEnergyTerms*,
                            SeparatePmeRanksPermitted*,
                            const PbcType&,
                            const SimulationTimeStep&,

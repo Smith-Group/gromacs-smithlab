@@ -43,6 +43,9 @@
 #ifndef GMX_MDTYPES_IMDMODULE_H
 #define GMX_MDTYPES_IMDMODULE_H
 
+#include <vector>
+
+enum class InteractionFunction : int;
 
 namespace gmx
 {
@@ -75,6 +78,8 @@ struct MDModuleDescriptor
      * interactions instead of the nonbonded kernels. At most one module may.
      */
     bool providesDirectCoulomb = false;
+    //! The energy terms the module writes, which the host writes to the energy file
+    std::vector<InteractionFunction> energyTerms;
 };
 
 /*! \libinternal \brief

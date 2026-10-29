@@ -47,6 +47,7 @@
 #include "gromacs/mdrunutility/mdmodulesnotifiers.h"
 #include "gromacs/mdrunutility/plainpairlistranges.h"
 #include "gromacs/mdtypes/imdmodule.h"
+#include "gromacs/topology/ifunc.h"
 #include "gromacs/utility/keyvaluetreebuilder.h"
 
 #include "nnpotforceprovider.h"
@@ -160,11 +161,6 @@ public:
         const auto setPBCTypeFunction = [this](const PbcType& pbc) { nnpotOptions_.setPbcType(pbc); };
         notifiers->simulationSetupNotifier_.subscribe(setPBCTypeFunction);
 
-        // Add NN output to energy file
-        const auto requestEnergyOutput = [](MDModulesEnergyOutputToNNPotRequestChecker* energyOutputRequest)
-        { energyOutputRequest->energyOutputToNNPot_ = true; };
-        notifiers->simulationSetupNotifier_.subscribe(requestEnergyOutput);
-
         // Set Logger during simulation setup
         const auto setLoggerFunction = [this](const MDLogger& logger)
         { nnpotOptions_.setLogger(logger); };
@@ -228,6 +224,18 @@ public:
         nnpotForceProvider_ = std::make_unique<NNPotForceProvider>(
                 nnpotOptions_.parameters(), nnpotOptions_.logger(), nnpotOptions_.mpiComm());
         forceProviders->addForceProvider(nnpotForceProvider_.get(), "NN potential");
+    }
+
+    //! From IMDModule
+    //! When active, NNPot writes its energy term
+    MDModuleDescriptor descriptor() const override
+    {
+        MDModuleDescriptor descriptor;
+        if (nnpotOptions_.isActive())
+        {
+            descriptor.energyTerms = { InteractionFunction::NeuralNetworkPotentialEnergy };
+        }
+        return descriptor;
     }
 
     //! From IMDModule

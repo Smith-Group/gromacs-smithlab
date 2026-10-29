@@ -205,7 +205,8 @@ public:
      *
      * Allows MDModules to subscribe to notifications that are called back
      * during the set up of an MD simulation, after the options were
-     * assigned to the modules.
+     * assigned to the modules. MDModules itself answers MDModulesEnergyTerms
+     * with the energy terms the modules declare.
      *
      * \throws APIError When a module subscribes to the multi-simulation
      *     notification without declaring that it shares state across

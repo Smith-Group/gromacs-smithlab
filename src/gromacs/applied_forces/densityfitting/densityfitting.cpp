@@ -63,6 +63,7 @@
 #include "gromacs/mdtypes/iforceprovider.h"
 #include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/selection/indexutil.h"
+#include "gromacs/topology/ifunc.h"
 #include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/classhelpers.h"
 #include "gromacs/utility/exceptions.h"
@@ -319,12 +320,6 @@ public:
         };
         notifiers->simulationSetupNotifier_.subscribe(setSimulationTimeStepFunction);
 
-        // adding output to energy file
-        const auto requestEnergyOutput =
-                [this](MDModulesEnergyOutputToDensityFittingRequestChecker* energyOutputRequest)
-        { this->setEnergyOutputRequest(energyOutputRequest); };
-        notifiers->simulationSetupNotifier_.subscribe(requestEnergyOutput);
-
         // writing checkpoint data
         const auto checkpointDataWriting = [this](MDModulesWriteCheckpointData checkpointData)
         { forceProvider_->writeCheckpointData(checkpointData, DensityFittingModuleInfo::sc_name); };
@@ -348,6 +343,18 @@ public:
 
     //! No subscriptions to run notifications
     void subscribeToSimulationRunNotifications(MDModulesNotifiers* /* notifiers */) override {}
+
+    //! From IMDModule
+    //! When active, density fitting writes its energy term
+    MDModuleDescriptor descriptor() const override
+    {
+        MDModuleDescriptor descriptor;
+        if (densityFittingOptions_.active())
+        {
+            descriptor.energyTerms = { InteractionFunction::DensityFitting };
+        }
+        return descriptor;
+    }
 
     //! From IMDModule
     IMdpOptionProvider* mdpOptionProvider() override { return &densityFittingOptions_; }
@@ -390,13 +397,6 @@ public:
     {
         LocalAtomSet atomSet = localAtomSetManager->add(densityFittingOptions_.buildParameters().indices_);
         densityFittingSimulationParameters_.setLocalAtomSet(atomSet);
-    }
-
-    /*! \brief Request energy output to energy file during simulation.
-     */
-    void setEnergyOutputRequest(MDModulesEnergyOutputToDensityFittingRequestChecker* energyOutputRequest)
-    {
-        energyOutputRequest->energyOutputToDensityFitting_ = densityFittingOptions_.active();
     }
 
 private:

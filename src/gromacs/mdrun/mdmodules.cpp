@@ -399,6 +399,15 @@ void MDModules::subscribeToSimulationSetupNotifications()
                                  entry.name.c_str())));
         }
     }
+
+    std::vector<InteractionFunction> energyTerms;
+    for (const auto& entry : impl_->modules_)
+    {
+        const auto terms = entry.module->descriptor().energyTerms;
+        energyTerms.insert(energyTerms.end(), terms.begin(), terms.end());
+    }
+    impl_->notifiers_.simulationSetupNotifier_.subscribe([energyTerms](MDModulesEnergyTerms* request)
+                                                         { request->terms_ = energyTerms; });
 }
 
 void MDModules::subscribeToSimulationRunNotifications()

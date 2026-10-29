@@ -57,6 +57,7 @@
 #include "gromacs/options/basicoptions.h"
 #include "gromacs/options/ioptionscontainerwithsections.h"
 #include "gromacs/options/optionsection.h"
+#include "gromacs/topology/ifunc.h"
 #include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/keyvaluetree.h"
 #include "gromacs/utility/keyvaluetreebuilder.h"
@@ -281,6 +282,24 @@ TEST(MDModulesTest, RejectsTwoDirectCoulombProviders)
     second->descriptor_.providesDirectCoulomb = true;
     mdModules.add("second", second);
     EXPECT_THROW(mdModules.anyModuleProvidesDirectCoulomb(), APIError);
+}
+
+TEST(MDModulesTest, ReportsDeclaredEnergyTerms)
+{
+    MDModules mdModules;
+    auto      module                = std::make_shared<DeclaringTestModule>(false);
+    module->descriptor_.energyTerms = { InteractionFunction::DensityFitting,
+                                        InteractionFunction::NeuralNetworkPotentialEnergy };
+    mdModules.add("test", module);
+
+    const KeyValueTreeObject params = transformMdpInput(&mdModules, KeyValueTreeBuilder().build());
+    t_inputrec               ir;
+    mdModules.assignOptionsToModules(params, nullptr, &ir);
+    mdModules.subscribeToSimulationSetupNotifications();
+
+    MDModulesEnergyTerms energyTerms;
+    mdModules.notifiers().simulationSetupNotifier_.notify(&energyTerms);
+    EXPECT_EQ(module->descriptor_.energyTerms, energyTerms.terms_);
 }
 
 } // namespace
