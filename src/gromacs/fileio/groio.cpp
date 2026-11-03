@@ -336,7 +336,7 @@ static gmx_bool get_w_conf(FILE*                        in,
     return bVel;
 }
 
-void gmx_gro_read_conf(const std::filesystem::path& infile,
+bool gmx_gro_read_conf(const std::filesystem::path& infile,
                        t_symtab*                    symtab,
                        char**                       name,
                        t_atoms*                     atoms,
@@ -344,15 +344,16 @@ void gmx_gro_read_conf(const std::filesystem::path& infile,
                        rvec*                        v,
                        matrix                       box)
 {
-    FILE* in = gmx_fio_fopen(infile, "r");
-    int   ndec;
-    char  title[STRLEN];
-    get_w_conf(in, infile, title, symtab, atoms, &ndec, x, v, box);
+    FILE*      in = gmx_fio_fopen(infile, "r");
+    int        ndec;
+    char       title[STRLEN];
+    const bool haveVelocities = get_w_conf(in, infile, title, symtab, atoms, &ndec, x, v, box);
     if (name != nullptr)
     {
         *name = gmx_strdup(title);
     }
     gmx_fio_fclose(in);
+    return haveVelocities;
 }
 
 gmx_bool gro_next_x_or_v(FILE* status, t_trxframe* fr)

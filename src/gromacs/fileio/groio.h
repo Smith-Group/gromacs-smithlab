@@ -47,14 +47,15 @@ struct t_symtab;
 struct t_trxframe;
 
 void get_coordnum(const std::filesystem::path& infile, int* natoms);
-void gmx_gro_read_conf(const std::filesystem::path& infile,
+bool gmx_gro_read_conf(const std::filesystem::path& infile,
                        t_symtab*                    symtab,
                        char**                       name,
                        t_atoms*                     atoms,
                        rvec                         x[],
                        rvec*                        v,
                        matrix                       box);
-/* If name is not nullptr, gmx_strdup the title string into it. */
+/* If name is not nullptr, gmx_strdup the title string into it.
+ * Returns whether the file has velocities. */
 
 gmx_bool gro_next_x_or_v(FILE* status, struct t_trxframe* fr);
 int      gro_first_x_or_v(FILE* status, struct t_trxframe* fr);

@@ -54,6 +54,8 @@
 #include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/stringutil.h"
 
+#include "structurefileformats.h"
+
 namespace gmx
 {
 
@@ -71,6 +73,8 @@ struct LegacyFormat
     bool canRead;
     //! Whether the format can be written.
     bool canWrite;
+    //! Creates the file object, or nullptr if the format has none yet.
+    FilePointer (*factory)(const std::filesystem::path&, FileMode) = nullptr;
 };
 
 /*! \brief The formats that confio.h and trxio.h read and write.
@@ -89,31 +93,37 @@ const LegacyFormat c_legacyFormats[] = {
       FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box
               | FileCapability::Trajectory | FileCapability::Velocities,
       true,
-      true },
+      true,
+      createGroFile },
     { efG96,
       FileCapability::Structure | FileCapability::Box | FileCapability::Trajectory | FileCapability::Velocities,
       true,
-      true },
+      true,
+      createG96File },
     { efPDB,
       FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box
               | FileCapability::Topology | FileCapability::Trajectory,
       true,
-      true },
+      true,
+      createPdbFile },
     { efCIF,
       FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box
               | FileCapability::Topology | FileCapability::Trajectory,
       true,
-      true },
+      true,
+      createCifFile },
     { efBRK,
       FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box | FileCapability::Topology,
       true,
-      true },
+      true,
+      createPdbFile },
     { efENT,
       FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box | FileCapability::Topology,
       true,
-      true },
-    { efESP, FileCapability::Structure | FileCapability::Box | FileCapability::Velocities, true, true },
-    { efPQR, FileCapability::Structure | FileCapability::Box, false, true },
+      true,
+      createPdbFile },
+    { efESP, FileCapability::Structure | FileCapability::Box | FileCapability::Velocities, true, true, createEspFile },
+    { efPQR, FileCapability::Structure | FileCapability::Box, false, true, createPqrFile },
     { efTPR,
       FileCapability::Structure | FileCapability::Box | FileCapability::Topology | FileCapability::Velocities,
       true,
@@ -195,6 +205,10 @@ FileFormatRegistry::FileFormatRegistry()
         info.canRead      = format.canRead;
         info.canWrite     = format.canWrite;
         info.legacyType   = format.type;
+        if (format.factory != nullptr)
+        {
+            info.factory = format.factory;
+        }
         registerFormat(std::move(info));
     }
 }

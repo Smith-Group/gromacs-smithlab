@@ -56,6 +56,7 @@ set(FILEIO_SOURCES
     oenv.cpp
     pdbio.cpp
     readinp.cpp
+    structurefileformats.cpp
     tngio.cpp
     tpxio.cpp
     trrio.cpp

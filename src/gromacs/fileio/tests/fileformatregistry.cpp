@@ -42,6 +42,7 @@
 
 #include "gromacs/fileio/fileformatregistry.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -54,10 +55,14 @@
 #include <gtest/gtest.h>
 
 #include "gromacs/fileio/boxcontainingfile.h"
+#include "gromacs/fileio/confio.h"
 #include "gromacs/fileio/filetypes.h"
 #include "gromacs/fileio/structurefile.h"
 #include "gromacs/fileio/topologyfile.h"
+#include "gromacs/mdtypes/md_enums.h"
 #include "gromacs/pbcutil/pbc.h"
+#include "gromacs/topology/atoms.h"
+#include "gromacs/topology/symtab.h"
 #include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/stringutil.h"
 
@@ -98,9 +103,14 @@ public:
     void write() override
     {
         std::ofstream out(path_);
-        for (const RVec& position : positions_)
+        for (int i = 0; i < gmx::ssize(positions_); i++)
         {
-            out << position[XX] << ' ' << position[YY] << ' ' << position[ZZ] << '\n';
+            if (selection_.has_value()
+                && std::find(selection_->begin(), selection_->end(), i) == selection_->end())
+            {
+                continue;
+            }
+            out << positions_[i][XX] << ' ' << positions_[i][YY] << ' ' << positions_[i][ZZ] << '\n';
         }
     }
     bool        supportsMode(FileMode mode) const override { return mode != FileMode::Append; }
@@ -109,21 +119,30 @@ public:
     int                  getNumAtoms() const override { return gmx::ssize(positions_); }
     ArrayRef<const RVec> getPositions() const override { return positions_; }
     const t_atoms*       getAtoms() const override { return nullptr; }
+    ArrayRef<const RVec> getVelocities() const override { return {}; }
+    const std::string&   getTitle() const override { return title_; }
+    void                 setStructure(const std::string& title,
+                                      const t_atoms& /*atoms*/,
+                                      ArrayRef<const RVec> positions,
+                                      ArrayRef<const RVec> /*velocities*/) override
+    {
+        title_ = title;
+        positions_.assign(positions.begin(), positions.end());
+        selection_.reset();
+    }
+    void setSelection(ArrayRef<const int> selection) override { selection_ = selection; }
 
     std::optional<Matrix3x3> getBoundaries() const override { return box_; }
     void                     setBoundaries(const Matrix3x3& box) override { box_ = box; }
     PbcType getPbcType() const override { return box_.has_value() ? PbcType::Xyz : PbcType::No; }
-
-    //! Sets the positions to be written.
-    void setPositions(ArrayRef<const RVec> positions)
-    {
-        positions_.assign(positions.begin(), positions.end());
-    }
+    void    setPbcType(PbcType /*pbcType*/) override {}
 
 private:
-    std::filesystem::path    path_;
-    std::vector<RVec>        positions_;
-    std::optional<Matrix3x3> box_;
+    std::filesystem::path              path_;
+    std::string                        title_;
+    std::vector<RVec>                  positions_;
+    std::optional<ArrayRef<const int>> selection_;
+    std::optional<Matrix3x3>           box_;
 };
 
 //! Creates an XyzTestFile.
@@ -242,7 +261,7 @@ TEST(FileFormatRegistryTest, RefusesModeTheFormatCannotDo)
 
 TEST(FileFormatRegistryTest, LegacyFormatIsNotYetAFileObject)
 {
-    EXPECT_THROW_GMX(FileFormatRegistry::instance().open("conf.gro", FileMode::Read), NotImplementedError);
+    EXPECT_THROW_GMX(FileFormatRegistry::instance().open("topol.tpr", FileMode::Read), NotImplementedError);
 }
 
 TEST(FileFormatRegistryTest, RefusesMissingCapabilityBeforeOpening)
@@ -274,15 +293,53 @@ TEST(FileFormatRegistryTest, WritesAndReadsThroughCapabilityInterfaces)
     const std::filesystem::path path = fileManager.getTemporaryFilePath("coordinates.gmxtestxyz");
     const std::vector<RVec>     positions = { { 0.5, 1.0, 1.5 }, { 2.0, 2.5, 3.0 } };
     {
+        t_atoms atoms;
+        init_t_atoms(&atoms, gmx::ssize(positions), false);
         std::unique_ptr<StructureFile> file = openFileAs<StructureFile>(path, FileMode::Write);
-        dynamic_cast<XyzTestFile&>(*file).setPositions(positions);
+        file->setStructure("", atoms, positions, {});
         file->write();
+        done_atom(&atoms);
     }
     std::unique_ptr<StructureFile> file = openFileAs<StructureFile>(path, FileMode::Read);
     file->read();
     ASSERT_EQ(file->getNumAtoms(), 2);
     EXPECT_REAL_EQ(3.0, file->getPositions()[1][ZZ]);
     EXPECT_FALSE(dynamic_cast<BoxContainingFile&>(*file).getBoundaries().has_value());
+}
+
+TEST(FileFormatRegistryTest, ConfioWritesFormatRegisteredOutsideFileio)
+{
+    TestFileManager             fileManager;
+    const std::filesystem::path path = fileManager.getTemporaryFilePath("selected.gmxtestxyz");
+    const rvec                  x[3] = { { 0.5, 1.0, 1.5 }, { 2.0, 2.5, 3.0 }, { 3.5, 4.0, 4.5 } };
+    matrix                      box  = { { 5, 0, 0 }, { 0, 5, 0 }, { 0, 0, 5 } };
+    int                         index[2] = { 2, 0 };
+    t_atoms                     atoms;
+    init_t_atoms(&atoms, 3, false);
+    write_sto_conf_indexed(path, "title", &atoms, x, nullptr, PbcType::Xyz, box, 2, index);
+    done_atom(&atoms);
+
+    std::unique_ptr<StructureFile> file = openFileAs<StructureFile>(path, FileMode::Read);
+    file->read();
+    ASSERT_EQ(file->getNumAtoms(), 2);
+    EXPECT_REAL_EQ(0.5, file->getPositions()[0][XX]);
+    EXPECT_REAL_EQ(4.5, file->getPositions()[1][ZZ]);
+}
+
+TEST(FileFormatRegistryTest, ConfioRefusesFormatWithoutParticleNames)
+{
+    TestFileManager             fileManager;
+    const std::filesystem::path path = fileManager.getTemporaryFilePath("unnamed.gmxtestxyz");
+    std::ofstream(path) << "0.5 1.0 1.5\n";
+    t_symtab symtab;
+    open_symtab(&symtab);
+    char*   name = nullptr;
+    t_atoms atoms;
+    rvec*   x = nullptr;
+    matrix  box;
+    EXPECT_THROW_GMX(readConfAndAtoms(path, &symtab, &name, &atoms, nullptr, &x, nullptr, box),
+                     InvalidInputError);
+    done_symtab(&symtab);
 }
 
 } // namespace

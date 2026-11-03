@@ -165,7 +165,7 @@ enum
 };
 static const char* const esp_prop[espNR] = { "id", "pos", "type", "q", "v", "f", "molecule" };
 
-void gmx_espresso_read_conf(const std::filesystem::path& infile,
+bool gmx_espresso_read_conf(const std::filesystem::path& infile,
                             t_symtab*                    symtab,
                             char**                       name,
                             t_atoms*                     atoms,
@@ -179,6 +179,7 @@ void gmx_espresso_read_conf(const std::filesystem::path& infile,
     int      prop[32];
     double   d;
     gmx_bool bFoundParticles, bFoundProp, bFoundVariable, bMol;
+    bool     haveVelocities = false;
 
     if (name != nullptr)
     {
@@ -219,6 +220,10 @@ void gmx_espresso_read_conf(const std::filesystem::path& infile,
                         if (p == espQ)
                         {
                             atoms->haveCharge = TRUE;
+                        }
+                        if (p == espV)
+                        {
+                            haveVelocities = true;
                         }
 
                         if (debug)
@@ -391,6 +396,8 @@ void gmx_espresso_read_conf(const std::filesystem::path& infile,
     }
 
     gmx_fio_fclose(fp);
+
+    return haveVelocities;
 }
 
 int get_espresso_coordnum(const std::filesystem::path& infile)
