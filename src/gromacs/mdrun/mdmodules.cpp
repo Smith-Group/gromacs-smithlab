@@ -383,13 +383,15 @@ void MDModules::subscribeToPreProcessingNotifications()
 
 void MDModules::subscribeToSimulationSetupNotifications()
 {
-    const auto& setupNotifier = impl_->notifiers_.simulationSetupNotifier_;
+    const auto& setupNotifier          = impl_->notifiers_.simulationSetupNotifier_;
+    int         numMultisimSubscribers = setupNotifier.numSubscribers<const gmx_multisim_t*>();
     for (const auto& entry : impl_->modules_)
     {
-        const int numMultisimSubscribers = setupNotifier.numSubscribers<const gmx_multisim_t*>();
         entry.module->subscribeToSimulationSetupNotifications(&impl_->notifiers_);
-        if (setupNotifier.numSubscribers<const gmx_multisim_t*>() > numMultisimSubscribers
-            && !entry.module->descriptor().sharesStateAcrossSimulations)
+        const int  numSubscribersAfter  = setupNotifier.numSubscribers<const gmx_multisim_t*>();
+        const bool subscribedToMultisim = numSubscribersAfter > numMultisimSubscribers;
+        numMultisimSubscribers          = numSubscribersAfter;
+        if (subscribedToMultisim && !entry.module->descriptor().sharesStateAcrossSimulations)
         {
             GMX_THROW(APIError(
                     formatString("Module %s subscribed to the multi-simulation notification "
