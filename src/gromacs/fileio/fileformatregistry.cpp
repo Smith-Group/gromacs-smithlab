@@ -99,6 +99,11 @@ const LegacyFormat c_legacyFormats[] = {
               | FileCapability::Topology | FileCapability::Trajectory,
       true,
       true },
+    { efCIF,
+      FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box
+              | FileCapability::Topology | FileCapability::Trajectory,
+      true,
+      true },
     { efBRK,
       FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box | FileCapability::Topology,
       true,
