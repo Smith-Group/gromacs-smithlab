@@ -59,7 +59,7 @@ namespace gmx
  * and delegates to the currently active backend (e.g., ExaFMM, FMSolvr).
  * Designed to support multiple FMM implementations in a unified way.
  */
-class FmmMdpOptions final : public IMdpOptionProvider
+class FmmMdpOptions : public IMdpOptionProvider
 {
 public:
     /**

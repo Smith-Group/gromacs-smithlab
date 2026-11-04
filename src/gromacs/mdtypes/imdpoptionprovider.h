@@ -132,7 +132,8 @@ protected:
     IMdpOptionProvider& operator=(IMdpOptionProvider&&) noexcept = default;
     //! \}
 
-    ~IMdpOptionProvider() {}
+public:
+    virtual ~IMdpOptionProvider() {}
 };
 
 } // namespace gmx
