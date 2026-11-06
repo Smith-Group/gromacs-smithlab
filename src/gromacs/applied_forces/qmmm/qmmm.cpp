@@ -395,14 +395,12 @@ public:
 
     //! From IMDModule
     //! When active, QMMM writes its energy term
-    MDModuleDescriptor descriptor() const override
+    void describe(MDModuleDescriptor* descriptor) const override
     {
-        MDModuleDescriptor descriptor;
         if (qmmmOptions_.active())
         {
-            descriptor.energyTerms = { InteractionFunction::QuantumMechanicalRegionEnergy };
+            descriptor->energyTerms = { InteractionFunction::QuantumMechanicalRegionEnergy };
         }
-        return descriptor;
     }
 
     //! From IMDModule

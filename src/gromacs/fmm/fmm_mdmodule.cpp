@@ -130,11 +130,9 @@ public:
 
     //! From IMDModule
     //! Declares whether FMM handles the short-range Coulomb interactions; an inactive FMM does not
-    MDModuleDescriptor descriptor() const override
+    void describe(MDModuleDescriptor* descriptor) const override
     {
-        MDModuleDescriptor descriptor;
-        descriptor.providesDirectCoulomb = (fmmMdpOptions_.directProvider() == FmmDirectProvider::Fmm);
-        return descriptor;
+        descriptor->providesDirectCoulomb = (fmmMdpOptions_.directProvider() == FmmDirectProvider::Fmm);
     }
 
     //! From IMDModule

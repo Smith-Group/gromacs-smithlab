@@ -184,11 +184,9 @@ public:
 class HaloPairForceModule final : public IMDModule
 {
 public:
-    MDModuleDescriptor descriptor() const override
+    void describe(MDModuleDescriptor* descriptor) const override
     {
-        MDModuleDescriptor descriptor;
-        descriptor.writesHaloForces = true;
-        return descriptor;
+        descriptor->writesHaloForces = true;
     }
     IMdpOptionProvider* mdpOptionProvider() override { return nullptr; }
     IMDOutputProvider*  outputProvider() override { return nullptr; }

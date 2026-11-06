@@ -87,7 +87,7 @@ because this is redundant when `override` is used. This follows
 the Cpp Core Guidelines (guideline C.128).
 
 What the host has to know about a module, it reads from the
-gmx::MDModuleDescriptor that `descriptor()` returns, after the mdp
+gmx::MDModuleDescriptor that `describe()` fills, after the mdp
 options have been assigned to the module: whether the module couples
 the simulations of a multi-simulation run, whether it provides the
 direct Coulomb interactions, which energy terms it writes, and whether
@@ -310,9 +310,19 @@ defined in the generated header `gromacs/mdtypes/mdmoduleapiversion.h`:
 * `GMX_MDMODULE_API_HASH` is a hash of the interface headers, computed by CMake.
 
 Within a major the interface only grows. Fields are appended to the structs
-that the host fills, and a new kind of hook is a new interface; a virtual
-function is never added to, removed from or reordered in an existing interface.
-Any other change increments the major.
+that the host allocates, such as gmx::MDModuleDescriptor and `GmxHostApiInfo`,
+so a module built against an older header sets or reads only the fields it
+knows; a new kind of hook is a new interface; a virtual function is never added
+to, removed from or reordered in an existing interface. Any other change
+increments the major. The interface headers do not change in a release branch.
+
+This is what a plugin can rely on: a plugin built against one \Gromacs release
+loads on every \Gromacs with the same major version of the interface, in
+particular on every patch release of the same series. It has to be built with
+the same compiler family and standard library as the host, because C++ objects
+cross the boundary; the host cannot check this. A plugin whose build has a
+different hash than the host, within the same major, is loaded and the log says
+which revision it was built against.
 
 The test `MDModuleApiHashTest` fails when the interface headers change and
 `GMX_MDMODULE_API_RECORDED_HASH` in `mdmoduleapi.cmake` is not updated. A
@@ -321,6 +331,8 @@ note and, if it is not append-only, increments the major.
 
 The host describes itself to a plugin with gmx::hostApiInfo(), which returns
 the version, the size of `real` and the MPI of the host in a `GmxHostApiInfo`.
+A plugin describes itself to the host in a `GmxPluginInfo`: its name, its
+version and the version of the interface it was built against.
 
 Plugins
 -------
@@ -356,6 +368,7 @@ loads them with gmx::loadMDModulePlugin():
   module registered can outlive the module.
 
 grompp loads the plugins before it reads their mdp options, and writes their
-names and versions to the internal parameters in the tpr file. mdrun loads the
-plugins named there before it assigns the options, so a tpr file whose plugins
-cannot be loaded is refused.
+names, versions and the version of the interface they were built against to
+the internal parameters in the tpr file. mdrun loads the plugins named there
+before it assigns the options, so a tpr file whose plugins cannot be loaded is
+refused.

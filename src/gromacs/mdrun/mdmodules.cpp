@@ -366,6 +366,19 @@ IMDOutputProvider* MDModules::outputProvider()
     return impl_.get();
 }
 
+namespace
+{
+
+//! Returns what \p module declares about itself
+MDModuleDescriptor describe(const IMDModule& module)
+{
+    MDModuleDescriptor descriptor;
+    module.describe(&descriptor);
+    return descriptor;
+}
+
+} // namespace
+
 ForceProviders* MDModules::initForceProviders(gmx_wallcycle* wallCycle)
 {
     GMX_RELEASE_ASSERT(impl_->forceProviders_ == nullptr,
@@ -376,7 +389,7 @@ ForceProviders* MDModules::initForceProviders(gmx_wallcycle* wallCycle)
         const int numHaloForceProviders  = impl_->forceProviders_->numHaloForceProviders();
         const int numPostEnergyProviders = impl_->forceProviders_->numPostEnergyProviders();
         entry.module->initForceProviders(impl_->forceProviders_.get());
-        const MDModuleDescriptor descriptor = entry.module->descriptor();
+        const MDModuleDescriptor descriptor = describe(*entry.module);
         if (impl_->forceProviders_->numHaloForceProviders() > numHaloForceProviders
             && !descriptor.writesHaloForces)
         {
@@ -415,7 +428,7 @@ void MDModules::subscribeToSimulationSetupNotifications()
         const int  numSubscribersAfter  = setupNotifier.numSubscribers<const gmx_multisim_t*>();
         const bool subscribedToMultisim = numSubscribersAfter > numMultisimSubscribers;
         numMultisimSubscribers          = numSubscribersAfter;
-        if (subscribedToMultisim && !entry.module->descriptor().sharesStateAcrossSimulations)
+        if (subscribedToMultisim && !describe(*entry.module).sharesStateAcrossSimulations)
         {
             GMX_THROW(APIError(
                     formatString("Module %s subscribed to the multi-simulation notification "
@@ -427,7 +440,7 @@ void MDModules::subscribeToSimulationSetupNotifications()
     std::vector<InteractionFunction> energyTerms;
     for (const auto& entry : impl_->modules_)
     {
-        const auto terms = entry.module->descriptor().energyTerms;
+        const auto terms = describe(*entry.module).energyTerms;
         energyTerms.insert(energyTerms.end(), terms.begin(), terms.end());
     }
     impl_->notifiers_.simulationSetupNotifier_.subscribe([energyTerms](MDModulesEnergyTerms* request)
@@ -452,7 +465,7 @@ bool MDModules::anyModuleSharesStateAcrossSimulations() const
     return std::any_of(impl_->modules_.begin(),
                        impl_->modules_.end(),
                        [](const RegisteredModule& entry)
-                       { return entry.module->descriptor().sharesStateAcrossSimulations; });
+                       { return describe(*entry.module).sharesStateAcrossSimulations; });
 }
 
 bool MDModules::anyModuleAddsForcesAfterPotentialEnergy() const
@@ -460,7 +473,7 @@ bool MDModules::anyModuleAddsForcesAfterPotentialEnergy() const
     return std::any_of(impl_->modules_.begin(),
                        impl_->modules_.end(),
                        [](const RegisteredModule& entry)
-                       { return entry.module->descriptor().addsForcesAfterPotentialEnergy; });
+                       { return describe(*entry.module).addsForcesAfterPotentialEnergy; });
 }
 
 bool MDModules::anyModuleProvidesDirectCoulomb() const
@@ -468,7 +481,7 @@ bool MDModules::anyModuleProvidesDirectCoulomb() const
     const RegisteredModule* provider = nullptr;
     for (const auto& entry : impl_->modules_)
     {
-        if (entry.module->descriptor().providesDirectCoulomb)
+        if (describe(*entry.module).providesDirectCoulomb)
         {
             if (provider != nullptr)
             {
@@ -521,15 +534,14 @@ void MDModules::writePluginRecord(KeyValueTreeObjectBuilder builder) const
     {
         return;
     }
-    const GmxHostApiInfo      host   = hostApiInfo();
     KeyValueTreeObjectBuilder record = builder.addObject(c_pluginRecordKey);
     for (const MDModulePlugin& plugin : impl_->plugins_)
     {
         KeyValueTreeObjectBuilder entry = record.addObject(plugin.name);
         entry.addValue<std::string>("version", plugin.version);
-        entry.addValue<int64_t>("api-major", static_cast<int64_t>(host.apiMajor));
+        entry.addValue<int64_t>("api-major", static_cast<int64_t>(plugin.apiMajor));
         entry.addValue<std::string>(
-                "api-hash", formatString("%016llx", static_cast<unsigned long long>(host.apiHash)));
+                "api-hash", formatString("%016llx", static_cast<unsigned long long>(plugin.apiHash)));
     }
 }
 

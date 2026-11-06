@@ -346,14 +346,12 @@ public:
 
     //! From IMDModule
     //! When active, density fitting writes its energy term
-    MDModuleDescriptor descriptor() const override
+    void describe(MDModuleDescriptor* descriptor) const override
     {
-        MDModuleDescriptor descriptor;
         if (densityFittingOptions_.active())
         {
-            descriptor.energyTerms = { InteractionFunction::DensityFitting };
+            descriptor->energyTerms = { InteractionFunction::DensityFitting };
         }
-        return descriptor;
     }
 
     //! From IMDModule

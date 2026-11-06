@@ -154,6 +154,9 @@ by naming it in the new mdp option ``mdmodule-plugins``. |Gromacs|
 looks for the plugin by name in the directories of
 ``GMX_MDMODULE_PLUGIN_PATH`` or in the plugin directory of the
 installation, and refuses a plugin built for another major version
-of the plugin interface, another precision or another MPI. Building
-with plugin support needs ``-DGMX_MDMODULE_PLUGINS=ON``.
+of the plugin interface, another precision or another MPI. A plugin
+built against one release loads on every release with the same major
+version of the interface, which does not change within a release
+series. Building with plugin support needs
+``-DGMX_MDMODULE_PLUGINS=ON``.
 :issue:`5773`

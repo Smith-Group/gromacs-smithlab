@@ -134,7 +134,7 @@ public:
     {
     }
 
-    MDModuleDescriptor  descriptor() const override { return descriptor_; }
+    void describe(MDModuleDescriptor* descriptor) const override { *descriptor = descriptor_; }
     IMdpOptionProvider* mdpOptionProvider() override { return nullptr; }
     IMDOutputProvider*  outputProvider() override { return nullptr; }
     void                initForceProviders(ForceProviders* /* forceProviders */) override {}
@@ -178,7 +178,7 @@ public:
 class PostEnergyTestModule final : public IMDModule
 {
 public:
-    MDModuleDescriptor  descriptor() const override { return descriptor_; }
+    void describe(MDModuleDescriptor* descriptor) const override { *descriptor = descriptor_; }
     IMdpOptionProvider* mdpOptionProvider() override { return nullptr; }
     IMDOutputProvider*  outputProvider() override { return nullptr; }
     void                initForceProviders(ForceProviders* forceProviders) override
@@ -200,7 +200,7 @@ private:
 class HaloForceTestModule final : public IMDModule
 {
 public:
-    MDModuleDescriptor  descriptor() const override { return descriptor_; }
+    void describe(MDModuleDescriptor* descriptor) const override { *descriptor = descriptor_; }
     IMdpOptionProvider* mdpOptionProvider() override { return nullptr; }
     IMDOutputProvider*  outputProvider() override { return nullptr; }
     void                initForceProviders(ForceProviders* forceProviders) override

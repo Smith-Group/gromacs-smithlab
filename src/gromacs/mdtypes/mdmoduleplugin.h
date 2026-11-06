@@ -93,6 +93,10 @@ struct GmxPluginInfo
     const char* name;
     //! The version of the plugin, for messages and the tpr record
     const char* version;
+    //! The major version of the interface the plugin was built against (GMX_MDMODULE_API_MAJOR)
+    uint64_t apiMajor;
+    //! The hash of the interface headers the plugin was built against (GMX_MDMODULE_API_HASH)
+    uint64_t apiHash;
 };
 
 namespace gmx

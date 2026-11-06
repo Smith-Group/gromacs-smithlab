@@ -228,14 +228,12 @@ public:
 
     //! From IMDModule
     //! When active, NNPot writes its energy term
-    MDModuleDescriptor descriptor() const override
+    void describe(MDModuleDescriptor* descriptor) const override
     {
-        MDModuleDescriptor descriptor;
         if (nnpotOptions_.isActive())
         {
-            descriptor.energyTerms = { InteractionFunction::NeuralNetworkPotentialEnergy };
+            descriptor->energyTerms = { InteractionFunction::NeuralNetworkPotentialEnergy };
         }
-        return descriptor;
     }
 
     //! From IMDModule

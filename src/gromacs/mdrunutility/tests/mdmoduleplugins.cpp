@@ -52,11 +52,13 @@
 #include "gromacs/mdrun/mdmodulepluginloader.h"
 #include "gromacs/mdrun/mdmodules.h"
 #include "gromacs/mdtypes/inputrec.h"
+#include "gromacs/mdtypes/mdmoduleplugin.h"
 #include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/keyvaluetree.h"
 #include "gromacs/utility/keyvaluetreebuilder.h"
 #include "gromacs/utility/keyvaluetreetransform.h"
 #include "gromacs/utility/stringcompare.h"
+#include "gromacs/utility/stringutil.h"
 
 namespace gmx
 {
@@ -131,6 +133,13 @@ TEST(MDModulePluginsTest, RecordsLoadedPlugins)
     mdModules.writePluginRecord(builder.rootObject());
     const KeyValueTreeObject record = builder.build();
     EXPECT_EQ(MDModules::recordedPluginNames(record), std::vector<std::string>{ "test-plugin" });
+    // The test plugin is built with the headers of this host
+    const GmxHostApiInfo host = hostApiInfo();
+    const KeyValueTreeObject& entry = record["mdmodule-plugins"].asObject()["test-plugin"].asObject();
+    EXPECT_EQ(entry["version"].cast<std::string>(), "1.2");
+    EXPECT_EQ(entry["api-major"].cast<int64_t>(), static_cast<int64_t>(host.apiMajor));
+    EXPECT_EQ(entry["api-hash"].cast<std::string>(),
+              formatString("%016llx", static_cast<unsigned long long>(host.apiHash)));
 }
 
 TEST(MDModulePluginsTest, RefusesMissingPlugin)

@@ -143,6 +143,7 @@
 #include "gromacs/mdtypes/locality.h"
 #include "gromacs/mdtypes/md_enums.h"
 #include "gromacs/mdtypes/mdatoms.h"
+#include "gromacs/mdtypes/mdmoduleplugin.h"
 #include "gromacs/mdtypes/mdrunoptions.h"
 #include "gromacs/mdtypes/multipletimestepping.h"
 #include "gromacs/mdtypes/observableshistory.h"
@@ -1135,14 +1136,25 @@ int Mdrunner::mdrunner()
     {
         mdModules_->addPlugins(MDModules::recordedPluginNames(*inputrec->internalParameters),
                                mdModulePluginSearchPath());
+        const GmxHostApiInfo host = hostApiInfo();
         for (const MDModulePlugin& plugin : mdModules_->plugins())
         {
+            std::string revision;
+            if (plugin.apiHash != host.apiHash)
+            {
+                revision = formatString(
+                        ", built against revision %016llx of the plugin interface (this GROMACS: "
+                        "%016llx)",
+                        static_cast<unsigned long long>(plugin.apiHash),
+                        static_cast<unsigned long long>(host.apiHash));
+            }
             GMX_LOG(mdlog.info)
                     .asParagraph()
-                    .appendTextFormatted("Loaded MDModules plugin %s version %s from %s",
+                    .appendTextFormatted("Loaded MDModules plugin %s version %s from %s%s",
                                          plugin.name.c_str(),
                                          plugin.version.c_str(),
-                                         plugin.path.c_str());
+                                         plugin.path.c_str(),
+                                         revision.c_str());
         }
     }
 

@@ -54,4 +54,4 @@ set(GMX_MDMODULE_API_HEADERS
 
 # The hash of these headers that the major was last checked for. A test
 # fails when the headers change without this hash being updated.
-set(GMX_MDMODULE_API_RECORDED_HASH "6497d2f8ed950803")
+set(GMX_MDMODULE_API_RECORDED_HASH "22b085b913c698ad")

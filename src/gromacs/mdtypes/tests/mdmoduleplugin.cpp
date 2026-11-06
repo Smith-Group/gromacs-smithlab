@@ -44,11 +44,16 @@
 
 #include "config.h"
 
-#include <string>
+#include <cstddef>
 
+#include <string>
+#include <utility>
+
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "gromacs/mdtypes/mdmoduleapiversion.h"
+#include "gromacs/mdtypes/mdmodulepluginentrypoints.h"
 #include "gromacs/utility/baseversion.h"
 #include "gromacs/utility/real.h"
 
@@ -70,6 +75,62 @@ TEST(HostApiInfoTest, DescribesThisBuild)
     const uint32_t expectedMpi = GMX_LIB_MPI ? c_gmxHostMpiLibrary
                                              : (GMX_THREAD_MPI ? c_gmxHostMpiThread : c_gmxHostMpiNone);
     EXPECT_EQ(info.mpi, expectedMpi);
+}
+
+//! Returns whether a plugin built with these headers accepts \p host, and why not
+std::pair<bool, std::string> pluginAccepts(const GmxHostApiInfo& host)
+{
+    const char* reason   = nullptr;
+    const bool  accepted = isHostCompatibleWithPluginBuild(host, &reason);
+    return { accepted, reason != nullptr ? reason : "" };
+}
+
+TEST(PluginCompatibilityCheckTest, AcceptsThisBuild)
+{
+    EXPECT_TRUE(pluginAccepts(hostApiInfo()).first);
+}
+
+TEST(PluginCompatibilityCheckTest, RefusesHostOlderThanThePlugin)
+{
+    GmxHostApiInfo host = hostApiInfo();
+    host.structSize     = offsetof(GmxHostApiInfo, mpi);
+    const auto result   = pluginAccepts(host);
+    EXPECT_FALSE(result.first);
+    EXPECT_THAT(result.second, ::testing::HasSubstr("older"));
+}
+
+TEST(PluginCompatibilityCheckTest, RefusesAnotherMajor)
+{
+    GmxHostApiInfo host = hostApiInfo();
+    host.apiMajor += 1;
+    const auto result = pluginAccepts(host);
+    EXPECT_FALSE(result.first);
+    EXPECT_THAT(result.second, ::testing::HasSubstr("major version"));
+}
+
+TEST(PluginCompatibilityCheckTest, AcceptsAnotherHashOfTheSameMajor)
+{
+    GmxHostApiInfo host = hostApiInfo();
+    host.apiHash ^= 1;
+    EXPECT_TRUE(pluginAccepts(host).first);
+}
+
+TEST(PluginCompatibilityCheckTest, RefusesAnotherPrecision)
+{
+    GmxHostApiInfo host = hostApiInfo();
+    host.sizeofReal     = sizeof(real) == sizeof(double) ? sizeof(float) : sizeof(double);
+    const auto result   = pluginAccepts(host);
+    EXPECT_FALSE(result.first);
+    EXPECT_THAT(result.second, ::testing::HasSubstr("precision"));
+}
+
+TEST(PluginCompatibilityCheckTest, RefusesAnotherMpi)
+{
+    GmxHostApiInfo host = hostApiInfo();
+    host.mpi          = host.mpi == c_gmxHostMpiLibrary ? c_gmxHostMpiThread : c_gmxHostMpiLibrary;
+    const auto result = pluginAccepts(host);
+    EXPECT_FALSE(result.first);
+    EXPECT_THAT(result.second, ::testing::HasSubstr("MPI"));
 }
 
 } // namespace

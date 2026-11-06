@@ -42,6 +42,8 @@
 #ifndef GMX_MDRUN_MDMODULEPLUGINLOADER_H
 #define GMX_MDRUN_MDMODULEPLUGINLOADER_H
 
+#include <cstdint>
+
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -65,6 +67,10 @@ struct MDModulePlugin
     std::string version;
     //! The file the plugin was loaded from
     std::filesystem::path path;
+    //! The major version of the interface the plugin was built against
+    uint64_t apiMajor;
+    //! The hash of the interface headers the plugin was built against, 0 if it does not say
+    uint64_t apiHash;
     //! The module, destroyed by the plugin
     std::shared_ptr<IMDModule> module;
 };

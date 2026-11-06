@@ -44,6 +44,7 @@
 
 #include "config.h"
 
+#include <cstddef>
 #include <cstdlib>
 
 #include <algorithm>
@@ -177,9 +178,11 @@ MDModulePlugin loadMDModulePlugin(const std::string& name, ArrayRef<const std::f
                                      reason != nullptr ? reason : "no reason given",
                                      describeHost(host).c_str()));
     }
+    // A plugin built against an older header fills a shorter struct; only the
+    // fields within its structSize are read.
     const GmxPluginInfo* info = pluginInfo();
-    if (info == nullptr || info->structSize < sizeof(GmxPluginInfo) || info->name == nullptr
-        || info->version == nullptr)
+    if (info == nullptr || info->structSize < offsetof(GmxPluginInfo, version) + sizeof(info->version)
+        || info->name == nullptr || info->version == nullptr)
     {
         throwCannotLoad(name, formatString("%s does not say what it is.", path.c_str()));
     }
@@ -187,12 +190,19 @@ MDModulePlugin loadMDModulePlugin(const std::string& name, ArrayRef<const std::f
     {
         throwCannotLoad(name, formatString("%s is the plugin of module '%s'.", path.c_str(), info->name));
     }
+    const bool saysApiVersion =
+            info->structSize >= offsetof(GmxPluginInfo, apiHash) + sizeof(info->apiHash);
     IMDModule* module = create();
     if (module == nullptr)
     {
         throwCannotLoad(name, formatString("%s did not create its module.", path.c_str()));
     }
-    return { name, info->version, path, std::shared_ptr<IMDModule>(module, destroy) };
+    return { name,
+             info->version,
+             path,
+             saysApiVersion ? info->apiMajor : host.apiMajor,
+             saysApiVersion ? info->apiHash : 0,
+             std::shared_ptr<IMDModule>(module, destroy) };
 #else
     GMX_UNUSED_VALUE(searchPath);
     throwCannotLoad(name,

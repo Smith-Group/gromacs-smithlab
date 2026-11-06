@@ -101,23 +101,25 @@ inline bool isHostCompatibleWithPluginBuild(const GmxHostApiInfo& host, const ch
  * \param[in] pluginVersion  The version of the plugin, a string literal
  * \param[in] createModule   A function that returns a std::unique_ptr<gmx::IMDModule>
  */
-#define GMX_MDMODULE_PLUGIN(moduleName, pluginVersion, createModule)                                       \
-    GMX_MDMODULE_PLUGIN_EXPORT bool gmxPluginIsCompatible(const GmxHostApiInfo* host, const char** reason) \
-    {                                                                                                      \
-        return ::gmx::isHostCompatibleWithPluginBuild(*host, reason);                                      \
-    }                                                                                                      \
-    GMX_MDMODULE_PLUGIN_EXPORT const GmxPluginInfo* gmxPluginInfo()                                        \
-    {                                                                                                      \
-        static const GmxPluginInfo info = { sizeof(GmxPluginInfo), moduleName, pluginVersion };            \
-        return &info;                                                                                      \
-    }                                                                                                      \
-    GMX_MDMODULE_PLUGIN_EXPORT ::gmx::IMDModule* gmxPluginCreate()                                         \
-    {                                                                                                      \
-        return (createModule)().release();                                                                 \
-    }                                                                                                      \
-    GMX_MDMODULE_PLUGIN_EXPORT void gmxPluginDestroy(::gmx::IMDModule* module)                             \
-    {                                                                                                      \
-        delete module;                                                                                     \
+#define GMX_MDMODULE_PLUGIN(moduleName, pluginVersion, createModule)                                        \
+    GMX_MDMODULE_PLUGIN_EXPORT bool gmxPluginIsCompatible(const GmxHostApiInfo* host, const char** reason)  \
+    {                                                                                                       \
+        return ::gmx::isHostCompatibleWithPluginBuild(*host, reason);                                       \
+    }                                                                                                       \
+    GMX_MDMODULE_PLUGIN_EXPORT const GmxPluginInfo* gmxPluginInfo()                                         \
+    {                                                                                                       \
+        static const GmxPluginInfo info = {                                                                 \
+            sizeof(GmxPluginInfo), moduleName, pluginVersion, GMX_MDMODULE_API_MAJOR, GMX_MDMODULE_API_HASH \
+        };                                                                                                  \
+        return &info;                                                                                       \
+    }                                                                                                       \
+    GMX_MDMODULE_PLUGIN_EXPORT ::gmx::IMDModule* gmxPluginCreate()                                          \
+    {                                                                                                       \
+        return (createModule)().release();                                                                  \
+    }                                                                                                       \
+    GMX_MDMODULE_PLUGIN_EXPORT void gmxPluginDestroy(::gmx::IMDModule* module)                              \
+    {                                                                                                       \
+        delete module;                                                                                      \
     }
 
 #endif

@@ -142,14 +142,20 @@ TEST_F(FmmForceProviderBuilderTest, DeclaresDirectCoulombProviderFromOptions)
     directProviderKey.append("-");
     directProviderKey.append(c_fmmExaFmmDirectProviderOptionName);
 
-    fmmModule_ = FmmModuleInfo::create();
-    EXPECT_FALSE(fmmModule_->descriptor().providesDirectCoulomb);
+    fmmModule_                       = FmmModuleInfo::create();
+    const auto providesDirectCoulomb = [this]()
+    {
+        MDModuleDescriptor descriptor;
+        fmmModule_->describe(&descriptor);
+        return descriptor.providesDirectCoulomb;
+    };
+    EXPECT_FALSE(providesDirectCoulomb());
 
     KeyValueTreeBuilder mdpValueBuilder;
     mdpValueBuilder.rootObject().addValue(fmmActiveBackendKey, fmmBackendName(ActiveFmmBackend::ExaFmm));
     mdpValueBuilder.rootObject().addValue(directProviderKey, fmmDirectProviderName(FmmDirectProvider::Fmm));
     fillOptionsFromMdpValues(mdpValueBuilder.build(), fmmModule_->mdpOptionProvider());
-    EXPECT_TRUE(fmmModule_->descriptor().providesDirectCoulomb);
+    EXPECT_TRUE(providesDirectCoulomb());
 }
 
 } // namespace test

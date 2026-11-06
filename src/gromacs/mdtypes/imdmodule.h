@@ -60,7 +60,8 @@ struct MDModulesNotifiers;
  *
  * The host reads the declarations after the mdp options have been
  * assigned to the modules, so a module can derive them from its
- * options. Fields are only ever appended to this struct.
+ * options. Fields are only ever appended to this struct, and the host
+ * allocates it, so a module sets only the fields it knows.
  *
  * \inlibraryapi
  * \ingroup module_mdtypes
@@ -112,12 +113,15 @@ class IMDModule
 public:
     virtual ~IMDModule() {}
 
-    /*! \brief Returns what the module declares about itself for this run.
+    /*! \brief Fills in what the module declares about itself for this run.
      *
      * Called after the mdp options have been assigned to the module.
-     * The default declares nothing.
+     * The host passes a descriptor that declares nothing, and the module
+     * sets what it declares; the default sets nothing. A module built
+     * against an older header therefore leaves the fields it does not
+     * know at their defaults.
      */
-    virtual MDModuleDescriptor descriptor() const { return {}; }
+    virtual void describe(MDModuleDescriptor* /* descriptor */) const {}
     //! Returns an interface for handling mdp input (and tpr I/O).
     virtual IMdpOptionProvider* mdpOptionProvider() = 0;
     //! Returns an interface for handling output files during simulation.
