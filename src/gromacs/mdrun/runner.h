@@ -46,6 +46,7 @@
 #include <array>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "gromacs/commandline/filenm.h"
 #include "gromacs/compat/pointers.h"
@@ -296,6 +297,9 @@ private:
      * Use opaque pointer for this implementation detail.
      */
     std::unique_ptr<RestraintManager> restraintManager_;
+
+    //! Make the modules that the caller adds to the built-in ones, on each rank
+    std::vector<MDModuleFactory> mdModuleFactories_;
 
     /*!
      * \brief Builder for stop signal handler
@@ -626,6 +630,16 @@ public:
      * \internal
      */
     MdrunnerBuilder& addLogFile(t_fileio* logFileHandle);
+
+    /*!
+     * \brief Add a module to the built-in ones.
+     *
+     * Optional. Each simulation rank makes the module with \p factory and
+     * adds it to its MDModules after the built-in modules.
+     *
+     * \param factory  Makes the module
+     */
+    MdrunnerBuilder& addMDModule(MDModuleFactory factory);
 
     /*!
      * \brief Provide a StopHandlerBuilder for the MD stop signal handling.

@@ -99,6 +99,15 @@ int gmx_mdrun(int argc, char* argv[])
 
 int gmx_mdrun(MPI_Comm communicator, const gmx_hw_info_t& hwinfo, int argc, char* argv[])
 {
+    return gmx_mdrun(communicator, hwinfo, argc, argv, {});
+}
+
+int gmx_mdrun(MPI_Comm                        communicator,
+              const gmx_hw_info_t&            hwinfo,
+              int                             argc,
+              char*                           argv[],
+              ArrayRef<const MDModuleFactory> mdModuleFactories)
+{
     auto mdModules = std::make_unique<MDModules>();
 
     std::vector<const char*> desc = {
@@ -300,6 +309,10 @@ int gmx_mdrun(MPI_Comm communicator, const gmx_hw_info_t& hwinfo, int argc, char
     // \todo Output environment should be configured outside of Mdrunner and provided as a resource.
     builder.addOutputEnvironment(options.oenv);
     builder.addLogFile(logFileGuard.get());
+    for (const auto& factory : mdModuleFactories)
+    {
+        builder.addMDModule(factory);
+    }
 
     auto runner = builder.build();
 

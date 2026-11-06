@@ -42,12 +42,15 @@
 #ifndef GMX_PROGRAMS_MDRUN_MDRUN_H
 #define GMX_PROGRAMS_MDRUN_MDRUN_H
 
+#include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/gmxmpi.h"
 
 struct gmx_hw_info_t;
 
 namespace gmx
 {
+
+struct MDModuleFactory;
 
 /*! \brief Implements C-style main function for mdrun
  *
@@ -76,6 +79,24 @@ int gmx_mdrun(int argc, char* argv[]);
  * that is different from the command-line and gmxapi.
  */
 int gmx_mdrun(MPI_Comm communicator, const gmx_hw_info_t& hwinfo, int argc, char* argv[]);
+
+/*! \brief Implements C-style main function for mdrun, with extra modules
+ *
+ * As above, and each simulation rank makes the modules with
+ * \p mdModuleFactories and adds them to the built-in ones. That suits
+ * tests of the module interface.
+ *
+ * \param[in]  communicator       The communicator to use for the simulation
+ * \param[in]  hwinfo             Describes the hardware detected on the physical nodes of the communicator
+ * \param[in]  argc               Number of C-style command-line arguments
+ * \param[in]  argv               C-style command-line argument strings
+ * \param[in]  mdModuleFactories  Make the modules to add
+ */
+int gmx_mdrun(MPI_Comm                        communicator,
+              const gmx_hw_info_t&            hwinfo,
+              int                             argc,
+              char*                           argv[],
+              ArrayRef<const MDModuleFactory> mdModuleFactories);
 
 } // namespace gmx
 

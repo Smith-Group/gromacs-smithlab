@@ -42,7 +42,9 @@
 #ifndef GMX_MDRUN_MDMODULES_H
 #define GMX_MDRUN_MDMODULES_H
 
+#include <functional>
 #include <memory>
+#include <string>
 #include <string_view>
 
 struct gmx_wallcycle;
@@ -62,6 +64,23 @@ class IMDModule;
 class IMDOutputProvider;
 struct MDModulesNotifiers;
 struct OutputControl;
+
+/*! \libinternal \brief
+ * Makes a module that the caller of mdrun adds to the built-in ones
+ *
+ * With thread-MPI each rank has its own MDModules, so each rank makes
+ * its own module.
+ *
+ * \inlibraryapi
+ * \ingroup module_mdrunutility
+ */
+struct MDModuleFactory
+{
+    //! The name the module is added with, see MDModules::add()
+    std::string name;
+    //! Makes the module
+    std::function<std::shared_ptr<IMDModule>()> make;
+};
 
 /*! \libinternal \brief
  * Manages the collection of all modules used for mdrun.

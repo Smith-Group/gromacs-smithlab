@@ -346,7 +346,8 @@ int SimulationRunner::callMdrun(const CommandLine& callerRef)
     return gmx_mdrun(MdrunTestFixtureBase::s_communicator,
                      *MdrunTestFixtureBase::s_hwinfo,
                      caller.argc(),
-                     caller.argv());
+                     caller.argv(),
+                     mdModuleFactories_);
 }
 
 int SimulationRunner::callMdrun()

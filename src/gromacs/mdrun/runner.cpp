@@ -417,6 +417,7 @@ Mdrunner Mdrunner::cloneOnSpawnedThread() const
     {
         newRunner.restraintManager_ = std::make_unique<RestraintManager>(*restraintManager_);
     }
+    newRunner.mdModuleFactories_ = mdModuleFactories_;
 
     // Copy members of main runner.
     // \todo Replace with builder when Simulation context and/or runner phases are better defined.
@@ -1122,6 +1123,10 @@ int Mdrunner::mdrunner()
     {
         mdModules_->add(RestraintMDModule::sc_name,
                         RestraintMDModule::create(restraint, restraint->sites()));
+    }
+    for (const auto& factory : mdModuleFactories_)
+    {
+        mdModules_->add(factory.name, factory.make());
     }
 
     // TODO: Error handling
@@ -2662,6 +2667,8 @@ public:
 
     void addLogFile(t_fileio* logFileHandle);
 
+    void addMDModule(MDModuleFactory factory);
+
     void addStopHandlerBuilder(std::unique_ptr<StopHandlerBuilder> builder);
 
     Mdrunner build();
@@ -2742,6 +2749,9 @@ private:
      * See issue #3379 for broader discussion on API aspects of simulation inputs and outputs.
      */
     SimulationInputHandle inputHolder_;
+
+    //! Make the modules that the caller adds to the built-in ones
+    std::vector<MDModuleFactory> mdModuleFactories_;
 };
 
 Mdrunner::BuilderImplementation::BuilderImplementation(std::unique_ptr<MDModules> mdModules,
@@ -2892,6 +2902,8 @@ Mdrunner Mdrunner::BuilderImplementation::build()
 
     newRunner.restraintManager_ = std::make_unique<RestraintManager>();
 
+    newRunner.mdModuleFactories_ = std::move(mdModuleFactories_);
+
     if (stopHandlerBuilder_)
     {
         newRunner.stopHandlerBuilder_ = std::move(stopHandlerBuilder_);
@@ -2953,6 +2965,11 @@ void Mdrunner::BuilderImplementation::addOutputEnvironment(gmx_output_env_t* out
 void Mdrunner::BuilderImplementation::addLogFile(t_fileio* logFileHandle)
 {
     logFileHandle_ = logFileHandle;
+}
+
+void Mdrunner::BuilderImplementation::addMDModule(MDModuleFactory factory)
+{
+    mdModuleFactories_.push_back(std::move(factory));
 }
 
 void Mdrunner::BuilderImplementation::addStopHandlerBuilder(std::unique_ptr<StopHandlerBuilder> builder)
@@ -3065,6 +3082,12 @@ MdrunnerBuilder& MdrunnerBuilder::addFilenames(ArrayRef<const t_filenm> filename
 MdrunnerBuilder& MdrunnerBuilder::addOutputEnvironment(gmx_output_env_t* outputEnvironment)
 {
     impl_->addOutputEnvironment(outputEnvironment);
+    return *this;
+}
+
+MdrunnerBuilder& MdrunnerBuilder::addMDModule(MDModuleFactory factory)
+{
+    impl_->addMDModule(std::move(factory));
     return *this;
 }
 
