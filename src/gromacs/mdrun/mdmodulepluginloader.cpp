@@ -90,6 +90,7 @@ std::vector<std::filesystem::path> mdModulePluginSearchPath()
 namespace
 {
 
+#if GMX_MDMODULE_PLUGINS
 //! Describes \p host for messages
 std::string describeHost(const GmxHostApiInfo& host)
 {
@@ -104,6 +105,7 @@ std::string describeHost(const GmxHostApiInfo& host)
             host.sizeofReal == sizeof(double) ? "double" : "mixed",
             mpi);
 }
+#endif
 
 //! Throws that plugin \p name cannot be loaded because of \p reason
 [[noreturn]] void throwCannotLoad(const std::string& name, const std::string& reason)
