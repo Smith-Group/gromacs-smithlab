@@ -88,6 +88,61 @@ enum class ForceProviderAtoms
     HomeAndHalo
 };
 
+/*! \brief Where in the MD step a hook runs
+ *
+ * The values leave room for phases in between.
+ */
+enum class StepPhase : int
+{
+    //! Before anything reads the coordinates, e.g. making molecules whole
+    PrepareGeometry = 100,
+    //! Reads the coordinates to compute collective variables for the phases below
+    CollectiveVariables = 200,
+    //! Adds forces; where all force providers ran before phases existed
+    Biases = 300,
+    //! Needs the potential energy, see IPostEnergyProvider
+    EnergyDependent = 400,
+    //! Reads the final forces and energies and does not change them
+    Observers = 500
+};
+
+/*! \brief When a hook runs within the MD step
+ *
+ * Hooks run by phase, then by ascending priority. Hooks with the same
+ * phase and priority run in the order they were added.
+ */
+struct HookOrder
+{
+    //! The phase the hook runs in
+    StepPhase phase = StepPhase::Biases;
+    //! The order within the phase, ascending
+    int priority = 0;
+};
+
+//! What the host knows about a step before its work is set up
+struct StepInfo
+{
+    //! The step
+    int64_t step = 0;
+    //! The time at the step
+    double time = 0;
+    //! Whether the pair list is constructed at the step
+    bool isNeighborSearchStep = false;
+    //! Whether a checkpoint is written at the step
+    bool isCheckpointingStep = false;
+    //! Whether this is the last step
+    bool isLastStep = false;
+};
+
+//! What a module needs to be computed at a step
+struct StepRequest
+{
+    //! The potential energy, for an IPostEnergyProvider
+    bool needPotentialEnergy = false;
+    //! The virial
+    bool needVirial = false;
+};
+
 
 /*! \libinternal \brief
  * Helper struct that bundles data for passing it over to the force providers
@@ -233,6 +288,80 @@ protected:
 };
 
 /*! \libinternal \brief
+ * Interface for a component that prepares for each MD step.
+ *
+ * Called on every PP rank before the work of the step is set up, which is
+ * the last point at which the module can still ask for the potential
+ * energy or the virial at that step. The MD integrators of the legacy
+ * simulator and rerun call it; the modular simulator, energy minimization
+ * and the other integrators do not.
+ *
+ * \inlibraryapi
+ * \ingroup module_mdtypes
+ */
+class IStepPreparer
+{
+public:
+    /*! \brief
+     * Prepares for a step.
+     *
+     * \param[in]  stepInfo  What the host knows about the step
+     * \param[out] request   What the module needs at the step, all false on entry
+     */
+    virtual void prepareStep(const StepInfo& stepInfo, StepRequest* request) = 0;
+
+protected:
+    ~IStepPreparer() = default;
+};
+
+/*! \libinternal \brief
+ * Input of a hook that runs after the potential energy is known
+ */
+struct PostEnergyInput
+{
+    //! The step
+    int64_t step_;
+    //! Whether \p potentialEnergy_ and \p virial_ were computed at this step
+    bool energyWasComputed_;
+    //! The potential energy of this rank, not summed over the ranks
+    real potentialEnergy_;
+    //! The force virial of this rank, before the contributions of the hooks
+    const tensor& virial_;
+};
+
+/*! \libinternal \brief
+ * Interface for a component that computes forces from the potential energy.
+ *
+ * Called on every PP rank at every force computation, after the potential
+ * energy of the rank is accumulated and the force on the home atoms is
+ * complete, e.g. to bias the potential energy. ForceProviderOutput::forceWithVirial_
+ * holds that complete force (with multiple time stepping, the combined
+ * force); the hook adds its virial contribution with
+ * ForceWithVirial::addVirialContribution(). Forces on virtual sites are
+ * spread after the hooks.
+ *
+ * At steps that compute no energy, \p energyWasComputed_ is false; a
+ * module that needs the energy asks for it with IStepPreparer.
+ *
+ * \inlibraryapi
+ * \ingroup module_mdtypes
+ */
+class IPostEnergyProvider
+{
+public:
+    /*! \brief
+     * Computes forces from the potential energy.
+     *
+     * \param[in]     input   The potential energy and the virial
+     * \param[in,out] output  The complete force on the home atoms, and the energies
+     */
+    virtual void applyAfterPotentialEnergy(const PostEnergyInput& input, ForceProviderOutput* output) = 0;
+
+protected:
+    ~IPostEnergyProvider() = default;
+};
+
+/*! \libinternal \brief
  * Evaluates forces from a collection of gmx::IForceProvider.
  *
  * \inlibraryapi
@@ -261,15 +390,61 @@ public:
                           const std::string&   cycleCounterName = "",
                           ForceProviderAtoms   atoms            = ForceProviderAtoms::Home);
 
+    /*! \brief
+     * Adds a provider that runs in the given order.
+     *
+     * \param[in] provider          The force provider callback function
+     * \param[in] order             When the provider runs, in a phase up to StepPhase::Biases
+     * \param[in] cycleCounterName  A non-empty string will add a cycle counter with the given name
+     *                              that registers the time spent in the force provider function
+     * \param[in] atoms             The atoms the provider writes forces on
+     *
+     * \throws APIError if the phase is after StepPhase::Biases
+     */
+    void addForceProvider(gmx::IForceProvider* provider,
+                          HookOrder            order,
+                          const std::string&   cycleCounterName = "",
+                          ForceProviderAtoms   atoms            = ForceProviderAtoms::Home);
+
+    //! Adds a component that prepares for each step; all are called, in the order added
+    void addStepPreparer(IStepPreparer* preparer);
+
+    /*! \brief
+     * Adds a hook that runs after the potential energy is known.
+     *
+     * \param[in] provider          The hook
+     * \param[in] order             When the hook runs, in StepPhase::EnergyDependent or later
+     * \param[in] cycleCounterName  A non-empty string will add a cycle counter with the given name
+     *
+     * \throws APIError if the phase is before StepPhase::EnergyDependent
+     */
+    void addPostEnergyProvider(IPostEnergyProvider* provider,
+                               HookOrder            order,
+                               const std::string&   cycleCounterName = "");
+
     //! Whether there are modules added.
     bool hasForceProvider() const;
 
     //! The number of providers that write forces on halo atoms
     int numHaloForceProviders() const;
 
-    //! Computes forces.
+    //! Whether there are hooks that run after the potential energy is known
+    bool hasPostEnergyProvider() const;
+
+    /*! \brief
+     * Prepares all components for a step.
+     *
+     * \param[in]  stepInfo  What the host knows about the step
+     * \param[out] request   What any of the components needs at the step
+     */
+    void prepareStep(const StepInfo& stepInfo, StepRequest* request) const;
+
+    //! Computes forces, by phase and priority of the providers.
     void calculateForces(const gmx::ForceProviderInput& forceProviderInput,
                          gmx::ForceProviderOutput*      forceProviderOutput) const;
+
+    //! Runs the hooks that need the potential energy, by phase and priority.
+    void applyAfterPotentialEnergy(const PostEnergyInput& input, ForceProviderOutput* output) const;
 
 private:
     class Impl;

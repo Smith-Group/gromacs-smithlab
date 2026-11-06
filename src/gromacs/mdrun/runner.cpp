@@ -136,6 +136,7 @@
 #include "gromacs/mdtypes/fcdata.h"
 #include "gromacs/mdtypes/forcerec.h"
 #include "gromacs/mdtypes/group.h"
+#include "gromacs/mdtypes/iforceprovider.h"
 #include "gromacs/mdtypes/inputrec.h"
 #include "gromacs/mdtypes/interaction_const.h"
 #include "gromacs/mdtypes/locality.h"
@@ -1874,6 +1875,12 @@ int Mdrunner::mdrunner()
             fr = std::make_unique<t_forcerec>(HostAllocationPolicy{});
         }
         fr->forceProviders = mdModules_->initForceProviders(wcycle.get());
+        if (useGpuForUpdate && fr->forceProviders->hasPostEnergyProvider())
+        {
+            GMX_THROW(InconsistentInputError(
+                    "A module computes forces after the potential energy is known, which needs "
+                    "the complete forces on the CPU; use -update cpu"));
+        }
 
         // A module that declares that it provides the direct Coulomb interactions
         // replaces the nonbonded kernels for them; without one, no choice is made.

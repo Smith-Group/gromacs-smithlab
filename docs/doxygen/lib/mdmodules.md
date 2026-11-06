@@ -97,6 +97,29 @@ multi-simulation notification, or adds a force provider for halo atoms,
 without declaring it is refused at setup. The host writes the declared
 energy terms to the energy file.
 
+Hooks in the MD step
+--------------------
+
+A module registers its hooks in gmx::ForceProviders, each with its own
+gmx::HookOrder: a gmx::StepPhase and a priority within it. Hooks run by
+phase, then by priority; hooks with the same order run in the order they
+were registered, which is the order of the modules. A module can have
+hooks in several phases.
+
+- gmx::IStepPreparer::prepareStep() runs before the work of the step is
+  set up. It gets the step, the time and whether the step searches pairs,
+  writes a checkpoint or is the last one, and can ask for the potential
+  energy or the virial at the step. All preparers are called, and their
+  requests are combined. The legacy MD simulator and rerun call it.
+- gmx::IForceProvider::calculateForces() runs during the force
+  computation, in the phases up to gmx::StepPhase::Biases. A force
+  provider added without an order runs in phase Biases with priority 0,
+  as all providers did before phases existed.
+- gmx::IPostEnergyProvider::applyAfterPotentialEnergy() runs after the
+  potential energy of the rank is accumulated and the forces on the home
+  atoms are complete, in phase gmx::StepPhase::EnergyDependent or later,
+  e.g. to bias the potential energy. GPU update does not support it.
+
 Halo forces
 -----------
 

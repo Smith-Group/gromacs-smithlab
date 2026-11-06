@@ -1109,12 +1109,30 @@ void LegacySimulator::do_md()
         }
 
         const int shellfcFlags = force_flags | (mdrunOptions_.verbose ? GMX_FORCE_ENERGY : 0);
-        const int legacyForceFlags = ((shellfc) ? shellfcFlags : force_flags) | (bNS ? GMX_FORCE_NS : 0);
+        int legacyForceFlags = ((shellfc) ? shellfcFlags : force_flags) | (bNS ? GMX_FORCE_NS : 0);
 
         // Note that signals, including for checkpointing, have been processed in compute_globals()
         // at the end of the previous step
         const bool isCheckpointingStep =
                 checkpointHandler->decideIfCheckpointingThisStep(bNS, bFirstStep, bLastStep);
+
+        // The modules prepare for the step, and ask for what they need computed at it
+        StepRequest stepRequest;
+        fr_->forceProviders->prepareStep({ step, t, bNS, isCheckpointingStep, bLastStep }, &stepRequest);
+        if (stepRequest.needPotentialEnergy || stepRequest.needVirial)
+        {
+            if (simulationWork.useMts && !do_per_step(step, ir->mtsLevels.back().stepFactor))
+            {
+                gmx_fatal(FARGS,
+                          "A module needs the potential energy or the virial at step %" PRId64
+                          ", but with multiple time stepping these are computed only every %d "
+                          "steps (mts-level2-factor)",
+                          step,
+                          ir->mtsLevels.back().stepFactor);
+            }
+            legacyForceFlags |= (stepRequest.needPotentialEnergy ? GMX_FORCE_ENERGY : 0)
+                                | (stepRequest.needVirial ? GMX_FORCE_VIRIAL : 0);
+        }
 
         runScheduleWork_->stepWork = setupStepWorkload(legacyForceFlags,
                                                        ir->mtsLevels,

@@ -279,27 +279,28 @@ if (TEST MdrunMpi4RankPmeTests AND TEST MdrunMpi2RankPmeTests)
     set_tests_properties(MdrunMpi4RankPmeTests PROPERTIES DEPENDS MdrunMpi2RankPmeTests)
 endif()
 
-# Tests that a module can write forces on halo atoms, with and without
-# domain decomposition
-set(exename "mdrun-haloforces-test")
+# Tests of the hooks of the module interface, with and without domain
+# decomposition
+set(exename "mdrun-module-hooks-test")
 gmx_add_gtest_executable(${exename} MPI
     CPP_SOURCE_FILES
         # files with code for tests
         haloforces.cpp
+        stephooks.cpp
         # pseudo-library for code for mdrun
         $<TARGET_OBJECTS:mdrun_objlib>
         )
 target_link_libraries(${exename} PRIVATE mdrun_test_infrastructure pbcutil)
-gmx_register_gtest_test(MdrunHaloForces1RankTests ${exename} MPI_RANKS 1 OPENMP_THREADS 2 INTEGRATION_TEST IGNORE_LEAKS QUICK_GPU_TEST)
-gmx_register_gtest_test(MdrunHaloForces2RankTests ${exename} MPI_RANKS 2 OPENMP_THREADS 2 INTEGRATION_TEST IGNORE_LEAKS QUICK_GPU_TEST)
-gmx_register_gtest_test(MdrunHaloForces4RankTests ${exename} MPI_RANKS 4 OPENMP_THREADS 1 INTEGRATION_TEST IGNORE_LEAKS QUICK_GPU_TEST)
+gmx_register_gtest_test(MdrunModuleHooks1RankTests ${exename} MPI_RANKS 1 OPENMP_THREADS 2 INTEGRATION_TEST IGNORE_LEAKS QUICK_GPU_TEST)
+gmx_register_gtest_test(MdrunModuleHooks2RankTests ${exename} MPI_RANKS 2 OPENMP_THREADS 2 INTEGRATION_TEST IGNORE_LEAKS QUICK_GPU_TEST)
+gmx_register_gtest_test(MdrunModuleHooks4RankTests ${exename} MPI_RANKS 4 OPENMP_THREADS 1 INTEGRATION_TEST IGNORE_LEAKS QUICK_GPU_TEST)
 # The tests write files whose names are not unique across test cases,
 # so they must not run concurrently. See #4654
-if (TEST MdrunHaloForces2RankTests AND TEST MdrunHaloForces1RankTests)
-    set_tests_properties(MdrunHaloForces2RankTests PROPERTIES DEPENDS MdrunHaloForces1RankTests)
+if (TEST MdrunModuleHooks2RankTests AND TEST MdrunModuleHooks1RankTests)
+    set_tests_properties(MdrunModuleHooks2RankTests PROPERTIES DEPENDS MdrunModuleHooks1RankTests)
 endif()
-if (TEST MdrunHaloForces4RankTests AND TEST MdrunHaloForces2RankTests)
-    set_tests_properties(MdrunHaloForces4RankTests PROPERTIES DEPENDS MdrunHaloForces2RankTests)
+if (TEST MdrunModuleHooks4RankTests AND TEST MdrunModuleHooks2RankTests)
+    set_tests_properties(MdrunModuleHooks4RankTests PROPERTIES DEPENDS MdrunModuleHooks2RankTests)
 endif()
 
 # Slow-running tests that target testing multiple-rank coordination behaviors

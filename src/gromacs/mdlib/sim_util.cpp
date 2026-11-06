@@ -740,6 +740,86 @@ static void computeSpecialForces(FILE*                         fplog,
     }
 }
 
+/*! \brief Runs the hooks that need the potential energy
+ *
+ * The hooks get the complete force on the home atoms: with multiple time
+ * stepping at a slow-force step, the combined force, which the update uses;
+ * what they add to it is also added to the normal force, which the
+ * constraint virial uses. Forces they put on virtual sites are spread.
+ *
+ * \param[in]     forceProviders    The hooks
+ * \param[in]     step              The current MD step
+ * \param[in]     simulationWork    Simulation schedule flags
+ * \param[in]     stepWork          Step schedule flags
+ * \param[in]     numHomeAtoms      The number of home atoms
+ * \param[in]     x                 The coordinates
+ * \param[in,out] force             The normal force
+ * \param[in,out] forceMtsCombined  The combined force with multiple time stepping, otherwise empty
+ * \param[in]     vsite             The virtual sites handler, can be nullptr
+ * \param[in]     box               The unit cell
+ * \param[in,out] virial            The force virial
+ * \param[in,out] enerd             Energy buffer
+ * \param[in,out] nrnb              Flop counters
+ * \param[in,out] wcycle            Wallcycle accounting struct
+ */
+static void applyPostEnergyProviders(const ForceProviders&     forceProviders,
+                                     int64_t                   step,
+                                     const SimulationWorkload& simulationWork,
+                                     const StepWorkload&       stepWork,
+                                     int                       numHomeAtoms,
+                                     ArrayRef<const RVec>      x,
+                                     ArrayRef<RVec>            force,
+                                     ArrayRef<RVec>            forceMtsCombined,
+                                     VirtualSitesHandler*      vsite,
+                                     const matrix              box,
+                                     tensor                    virial,
+                                     gmx_enerdata_t*           enerd,
+                                     t_nrnb*                   nrnb,
+                                     gmx_wallcycle*            wcycle)
+{
+    const bool        useCombined   = simulationWork.useMts && stepWork.computeSlowForces;
+    ArrayRef<RVec>    forceForHooks = useCombined ? forceMtsCombined : force;
+    std::vector<RVec> forceBeforeHooks;
+    if (useCombined)
+    {
+        forceBeforeHooks.assign(forceForHooks.begin(), forceForHooks.begin() + numHomeAtoms);
+    }
+
+    ForceWithVirial forceWithVirial(forceForHooks.subArray(0, numHomeAtoms), stepWork.computeVirial);
+    ForceProviderOutput output(&forceWithVirial, enerd);
+    matrix              virialBeforeHooks;
+    copy_mat(virial, virialBeforeHooks);
+    const PostEnergyInput input{
+        step, stepWork.computeEnergy, enerd->term[InteractionFunction::PotentialEnergy], virialBeforeHooks
+    };
+    forceProviders.applyAfterPotentialEnergy(input, &output);
+    if (stepWork.computeVirial)
+    {
+        m_add(virial, forceWithVirial.getVirial(), virial);
+    }
+
+    if (vsite)
+    {
+        /* The forces on the virtual sites were spread before and are zero,
+         * except those the hooks put on them
+         */
+        const VirtualSitesHandler::VirialHandling virialHandling =
+                (stepWork.computeVirial ? VirtualSitesHandler::VirialHandling::NonLinear
+                                        : VirtualSitesHandler::VirialHandling::None);
+        matrix vsiteVirial = { { 0 } };
+        vsite->spreadForces(x, forceForHooks, virialHandling, {}, vsiteVirial, nrnb, box, wcycle);
+        m_add(virial, vsiteVirial, virial);
+    }
+
+    if (useCombined)
+    {
+        for (int i = 0; i < numHomeAtoms; i++)
+        {
+            force[i] += forceForHooks[i] - forceBeforeHooks[i];
+        }
+    }
+}
+
 /*! \brief Launch the prepare_step and spread stages of PME GPU.
  *
  * \param[in]  pmedata              The PME structure
@@ -2744,6 +2824,24 @@ void do_force(FILE*                         fplog,
         {
             checkPotentialEnergyValidity(step, *enerd, inputrec);
         }
+    }
+
+    if (stepWork.computeForces && fr->forceProviders->hasPostEnergyProvider())
+    {
+        applyPostEnergyProviders(*fr->forceProviders,
+                                 step,
+                                 simulationWork,
+                                 stepWork,
+                                 mdAtoms.numHomeAtoms,
+                                 x.unpaddedArrayRef(),
+                                 force.unpaddedArrayRef(),
+                                 simulationWork.useMts ? forceView->forceMtsCombined() : ArrayRef<RVec>{},
+                                 vsite,
+                                 box,
+                                 vir_force,
+                                 enerd,
+                                 nrnb,
+                                 wcycle);
     }
 
     /* In case we don't have constraints and are using GPUs, the next balancing
