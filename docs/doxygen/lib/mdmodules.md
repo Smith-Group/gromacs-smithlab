@@ -296,3 +296,28 @@ that tree.
 
 To restore parameters, subscribe to the `const KeyValueTreeObject &`
 notification that returns the tree that is build by the KeyValueTreeBuilder*.
+
+Plugin API version
+------------------
+
+A module can be built outside \Gromacs and loaded at run time as a plugin.
+The headers that such a module is built against form the plugin interface,
+listed in `src/gromacs/mdtypes/mdmoduleapi.cmake`. Its version has two parts,
+defined in the generated header `gromacs/mdtypes/mdmoduleapiversion.h`:
+
+* `GMX_MDMODULE_API_MAJOR` is maintained by hand. A plugin built for one major
+  runs on every host with the same major.
+* `GMX_MDMODULE_API_HASH` is a hash of the interface headers, computed by CMake.
+
+Within a major the interface only grows. Fields are appended to the structs
+that the host fills, and a new kind of hook is a new interface; a virtual
+function is never added to, removed from or reordered in an existing interface.
+Any other change increments the major.
+
+The test `MDModuleApiHashTest` fails when the interface headers change and
+`GMX_MDMODULE_API_RECORDED_HASH` in `mdmoduleapi.cmake` is not updated. A
+change to these headers therefore updates the recorded hash, adds a release
+note and, if it is not append-only, increments the major.
+
+The host describes itself to a plugin with gmx::hostApiInfo(), which returns
+the version, the size of `real` and the MPI of the host in a `GmxHostApiInfo`.
