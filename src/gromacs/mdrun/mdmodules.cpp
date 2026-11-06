@@ -368,7 +368,16 @@ ForceProviders* MDModules::initForceProviders(gmx_wallcycle* wallCycle)
     impl_->forceProviders_ = std::make_unique<ForceProviders>(wallCycle);
     for (const auto& entry : impl_->modules_)
     {
+        const int numHaloForceProviders = impl_->forceProviders_->numHaloForceProviders();
         entry.module->initForceProviders(impl_->forceProviders_.get());
+        if (impl_->forceProviders_->numHaloForceProviders() > numHaloForceProviders
+            && !entry.module->descriptor().writesHaloForces)
+        {
+            GMX_THROW(APIError(formatString(
+                    "Module %s added a force provider for halo atoms without declaring "
+                    "that it writes halo forces",
+                    entry.name.c_str())));
+        }
     }
     return impl_->forceProviders_.get();
 }

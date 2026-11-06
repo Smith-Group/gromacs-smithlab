@@ -90,11 +90,32 @@ What the host has to know about a module, it reads from the
 gmx::MDModuleDescriptor that `descriptor()` returns, after the mdp
 options have been assigned to the module: whether the module couples
 the simulations of a multi-simulation run, whether it provides the
-direct Coulomb interactions, and which energy terms it writes. The host
-does not infer these from what the module subscribes to; a module that
-subscribes to the multi-simulation notification without declaring it is
-refused at setup. The host writes the declared energy terms to the
-energy file.
+direct Coulomb interactions, which energy terms it writes, and whether
+it writes forces on halo atoms. The host does not infer these from what
+the module subscribes to; a module that subscribes to the
+multi-simulation notification, or adds a force provider for halo atoms,
+without declaring it is refused at setup. The host writes the declared
+energy terms to the energy file.
+
+Halo forces
+-----------
+
+A force provider usually writes forces on home atoms only. A provider
+of pair forces between home atoms and the halo, added with
+gmx::ForceProviderAtoms::HomeAndHalo, also gets the number of local
+atoms including the halo in gmx::ForceProviderInput and the force
+buffer with shift forces in gmx::ForceProviderOutput. The forces on
+halo atoms are then communicated to their home ranks, and the forces
+enter the virial through the shift forces, as for the nonbonded
+kernels. With domain decomposition, the halo holds the periodic images
+needed in the decomposed dimensions; a pair across a periodic boundary
+in the other dimensions adds its shift force, as the bonded forces do.
+
+The force providers are called on every PP rank at every step that
+computes forces, so a provider may communicate. The balancing region
+for dynamic load balancing is closed by then; a provider can add the
+cycles of its computation to the load with
+DDBalanceRegionHandler::addCyclesAfterForceComputationCpu().
 
 Handling mdp input
 ------------------

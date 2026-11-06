@@ -209,6 +209,9 @@ public:
      * \param[in] wallCycle  Pointer to a wall cycle object, can be nullptr, in which case
      *                       no cycle counting will be performed for force providers.
      * \returns an object for computing forces from the modules.
+     *
+     * \throws APIError if a module adds a force provider for halo atoms
+     *         without declaring MDModuleDescriptor::writesHaloForces.
      */
     ForceProviders* initForceProviders(gmx_wallcycle* wallCycle);
 

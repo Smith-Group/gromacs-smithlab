@@ -56,6 +56,7 @@
 #include "gromacs/utility/vec.h"
 #include "gromacs/utility/vectypes.h"
 
+class DDBalanceRegionHandler;
 struct gmx_domdec_t;
 struct gmx_enerdata_t;
 struct gmx_wallcycle;
@@ -66,8 +67,26 @@ namespace gmx
 
 template<typename T>
 class ArrayRef;
+class ForceWithShiftForces;
 class ForceWithVirial;
 class MpiComm;
+
+/*! \brief The atoms a force provider writes forces on
+ *
+ * Declared when the provider is added to ForceProviders.
+ */
+enum class ForceProviderAtoms
+{
+    //! Home atoms only, through ForceProviderOutput::forceWithVirial_
+    Home,
+    /*! \brief Home and halo atoms, through ForceProviderOutput::forceWithShiftForces_
+     *
+     * For pair forces between home atoms and the halo: the forces on the
+     * halo atoms are communicated to their home ranks and enter the virial
+     * through the shift forces, as the forces of the nonbonded kernels do.
+     */
+    HomeAndHalo
+};
 
 
 /*! \libinternal \brief
@@ -120,6 +139,20 @@ public:
     matrix               box_ = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 } }; //!< The simulation box
     const MpiComm&       mpiComm_; //!< Communication object for my group
     const gmx_domdec_t*  dd_;      //!< Domain decomposition object, deprecated
+    /*! \brief The number of local atoms including the halo
+     *
+     * \p x_ holds them: the home atoms first, then the halo.
+     * Without domain decomposition, this is \p homenr_.
+     */
+    int numAtomsWithHalo_ = 0;
+    /*! \brief The dynamic load balancing region handler, can be nullptr
+     *
+     * The balancing region is closed when the force providers are called.
+     * A provider that writes halo forces can add the cycles of its
+     * computation to the load with
+     * DDBalanceRegionHandler::addCyclesAfterForceComputationCpu().
+     */
+    const DDBalanceRegionHandler* ddBalanceRegionHandler_ = nullptr;
 };
 
 /*! \brief Take pointer, check if valid, return reference
@@ -151,6 +184,12 @@ public:
 
     ForceWithVirial& forceWithVirial_; //!< Container for force and virial
     gmx_enerdata_t&  enerd_;           //!< Structure containing energy data
+    /*! \brief The forces on home and halo atoms, and the shift forces
+     *
+     * Only set for a provider added with ForceProviderAtoms::HomeAndHalo,
+     * nullptr for the others.
+     */
+    ForceWithShiftForces* forceWithShiftForces_ = nullptr;
 };
 
 
@@ -166,7 +205,13 @@ public:
  *
  * The forces that are produced by force providers are not taken into account
  * in the calculation of the virial. When applicable, the provider should
- * compute its own virial contribution.
+ * compute its own virial contribution. Forces written to
+ * ForceProviderOutput::forceWithShiftForces_ (ForceProviderAtoms::HomeAndHalo)
+ * do enter the virial: a pair across a periodic boundary in a dimension without
+ * domain decomposition adds its shift force, as the bonded forces do.
+ *
+ * The providers are called on every PP rank at every step that computes
+ * forces, so a provider may communicate over ForceProviderInput::mpiComm_.
  *
  * \inlibraryapi
  * \ingroup module_mdtypes
@@ -210,11 +255,17 @@ public:
      * \param[in] provider          The force provider callback function
      * \param[in] cycleCounterName  A non-empty string will add a cycle counter with the given name
      *                              that registers the time spent in the force provider function
+     * \param[in] atoms             The atoms the provider writes forces on
      */
-    void addForceProvider(gmx::IForceProvider* provider, const std::string& cycleCounterName = "");
+    void addForceProvider(gmx::IForceProvider* provider,
+                          const std::string&   cycleCounterName = "",
+                          ForceProviderAtoms   atoms            = ForceProviderAtoms::Home);
 
     //! Whether there are modules added.
     bool hasForceProvider() const;
+
+    //! The number of providers that write forces on halo atoms
+    int numHaloForceProviders() const;
 
     //! Computes forces.
     void calculateForces(const gmx::ForceProviderInput& forceProviderInput,

@@ -38,6 +38,7 @@
 
 #include <cstring>
 
+#include <algorithm>
 #include <array>
 
 #include "gromacs/domdec/domdec.h"
@@ -55,7 +56,12 @@ class BalanceRegion::Impl
 public:
     /*! \brief Constructor */
     Impl() :
-        isOpen(false), isOpenOnCpu(false), isOpenOnGpu(false), cyclesOpenCpu(0), cyclesLastCpu(0)
+        isOpen(false),
+        isOpenOnCpu(false),
+        isOpenOnGpu(false),
+        cyclesOpenCpu(0),
+        cyclesLastCpu(0),
+        cyclesLastRegion(0)
     {
     }
 
@@ -64,6 +70,7 @@ public:
     bool         isOpenOnGpu;   /**< Is the, currently open, region open on the GPU side? */
     gmx_cycles_t cyclesOpenCpu; /**< Cycle count when opening the CPU region */
     gmx_cycles_t cyclesLastCpu; /**< Cycle count at the last call to \p ddCloseBalanceRegionCpu() */
+    float        cyclesLastRegion; /**< The force cycles of the last closed region */
 };
 
 BalanceRegion::BalanceRegion()
@@ -145,8 +152,32 @@ void DDBalanceRegionHandler::closeRegionCpuImpl() const
             /* We can close the region */
             float cyclesCpu = cycles - reg->cyclesOpenCpu;
             dd_cycles_add(dd_, cyclesCpu, ddCyclF);
-            reg->isOpen = false;
+            reg->cyclesLastRegion = cyclesCpu;
+            reg->isOpen           = false;
         }
+    }
+}
+
+void DDBalanceRegionHandler::addCyclesAfterCloseCpuImpl(float cycles) const
+{
+    BalanceRegion::Impl* reg = getBalanceRegion(dd_);
+    GMX_ASSERT(!reg->isOpenOnCpu, "Cycles after closing can only be added to a closed CPU region");
+    if (reg->isOpen)
+    {
+        /* The GPU side is still open: count the cycles as CPU time of the
+         * region instead of as time waiting for the GPU.
+         */
+        reg->cyclesLastCpu += static_cast<gmx_cycles_t>(cycles);
+    }
+    else if (dd_->comm->ddSettings.recordLoad)
+    {
+        /* Add the cycles to the count of the last region, which
+         * dd_cycles_add() registered as a single count.
+         */
+        dd_->comm->cycl[ddCyclF] += cycles;
+        reg->cyclesLastRegion += cycles;
+        float& maxCycles = dd_->comm->cycl_max[ddCyclF];
+        maxCycles        = std::max(maxCycles, reg->cyclesLastRegion);
     }
 }
 
@@ -172,6 +203,7 @@ void DDBalanceRegionHandler::closeRegionGpuImpl(float waitGpuCyclesInCpuRegion,
 
         float cyclesCpu = reg->cyclesLastCpu - reg->cyclesOpenCpu;
         dd_cycles_add(dd_, cyclesCpu + waitGpuCyclesEstimate, ddCyclF);
+        reg->cyclesLastRegion = cyclesCpu + waitGpuCyclesEstimate;
 
         /* Register the total GPU wait time, to redistribute with GPU sharing */
         dd_cycles_add(dd_, waitGpuCyclesInCpuRegion + waitGpuCyclesEstimate, ddCyclWaitGPU);

@@ -42,6 +42,7 @@
 
 #include "iforceprovider.h"
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -54,15 +55,25 @@ class ForceProviders::Impl
 public:
     Impl(gmx_wallcycle* wallCycle) : wallCycle_(wallCycle) {}
 
-    std::vector<std::pair<IForceProvider*, std::optional<WallCycleCounter>>> providers_;
-    gmx_wallcycle*                                                           wallCycle_;
+    //! A provider with its cycle counter and the atoms it writes forces on
+    struct Entry
+    {
+        IForceProvider*                 provider;
+        std::optional<WallCycleCounter> wallCycleCounter;
+        ForceProviderAtoms              atoms;
+    };
+
+    std::vector<Entry> providers_;
+    gmx_wallcycle*     wallCycle_;
 };
 
 ForceProviders::ForceProviders(gmx_wallcycle* wallCycle) : impl_(new Impl(wallCycle)) {}
 
 ForceProviders::~ForceProviders() {}
 
-void ForceProviders::addForceProvider(gmx::IForceProvider* provider, const std::string& cycleCounterName)
+void ForceProviders::addForceProvider(gmx::IForceProvider* provider,
+                                      const std::string&   cycleCounterName,
+                                      ForceProviderAtoms   atoms)
 {
     std::optional<WallCycleCounter> counter;
     if (impl_->wallCycle_)
@@ -70,7 +81,7 @@ void ForceProviders::addForceProvider(gmx::IForceProvider* provider, const std::
         counter = impl_->wallCycle_->registerCycleCounter(cycleCounterName);
     }
 
-    impl_->providers_.emplace_back(provider, counter);
+    impl_->providers_.push_back({ provider, counter, atoms });
 }
 
 bool ForceProviders::hasForceProvider() const
@@ -78,17 +89,31 @@ bool ForceProviders::hasForceProvider() const
     return !impl_->providers_.empty();
 }
 
+int ForceProviders::numHaloForceProviders() const
+{
+    return std::count_if(impl_->providers_.begin(),
+                         impl_->providers_.end(),
+                         [](const Impl::Entry& entry)
+                         { return entry.atoms == ForceProviderAtoms::HomeAndHalo; });
+}
+
 void ForceProviders::calculateForces(const ForceProviderInput& forceProviderInput,
                                      ForceProviderOutput*      forceProviderOutput) const
 {
-    for (auto& [provider, wallCycleCounter] : impl_->providers_)
+    // The providers of home-atom forces do not get the halo force buffer
+    ForceProviderOutput homeAtomsOutput   = *forceProviderOutput;
+    homeAtomsOutput.forceWithShiftForces_ = nullptr;
+
+    for (auto& [provider, wallCycleCounter, atoms] : impl_->providers_)
     {
         if (wallCycleCounter.has_value())
         {
             wallcycle_start(impl_->wallCycle_, wallCycleCounter.value());
         }
 
-        provider->calculateForces(forceProviderInput, forceProviderOutput);
+        provider->calculateForces(
+                forceProviderInput,
+                atoms == ForceProviderAtoms::HomeAndHalo ? forceProviderOutput : &homeAtomsOutput);
 
         if (wallCycleCounter.has_value())
         {

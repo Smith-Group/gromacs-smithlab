@@ -614,6 +614,8 @@ static void checkPotentialEnergyValidity(int64_t step, const gmx_enerdata_t& ene
  * \param[in]     stepWork         Step schedule flags
  * \param[in,out] forceWithVirialMtsLevel0  Force and virial for MTS level0 forces
  * \param[in,out] forceWithVirialMtsLevel1  Force and virial for MTS level1 forces, can be nullptr
+ * \param[in,out] forceWithShiftForcesMtsLevel0  Home and halo forces and shift forces, MTS level0
+ * \param[in]     ddBalanceRegionHandler  The load balancing region handler, region closed here
  * \param[in,out] enerd            Energy buffer
  * \param[in,out] ed               Essential dynamics pointer
  * \param[in]     didNeighborSearch  Tells if we did neighbor searching this step,
@@ -622,28 +624,30 @@ static void checkPotentialEnergyValidity(int64_t step, const gmx_enerdata_t& ene
  * \todo Remove didNeighborSearch, which is used incorrectly.
  * \todo Convert all other algorithms called here to ForceProviders.
  */
-static void computeSpecialForces(FILE*                fplog,
-                                 const MpiComm&       mpiComm,
-                                 const gmx_domdec_t*  dd,
-                                 const t_inputrec&    inputrec,
-                                 Awh*                 awh,
-                                 gmx_enfrot*          enforcedRotation,
-                                 ImdSession*          imdSession,
-                                 pull_t*              pull_work,
-                                 int64_t              step,
-                                 double               t,
-                                 gmx_wallcycle*       wcycle,
-                                 ForceProviders*      forceProviders,
-                                 const matrix         box,
-                                 ArrayRef<const RVec> x,
-                                 const MDAtoms&       mdAtoms,
-                                 ArrayRef<const real> lambda,
-                                 const StepWorkload&  stepWork,
-                                 ForceWithVirial*     forceWithVirialMtsLevel0,
-                                 ForceWithVirial*     forceWithVirialMtsLevel1,
-                                 gmx_enerdata_t*      enerd,
-                                 edsam*               ed,
-                                 bool                 didNeighborSearch)
+static void computeSpecialForces(FILE*                         fplog,
+                                 const MpiComm&                mpiComm,
+                                 const gmx_domdec_t*           dd,
+                                 const t_inputrec&             inputrec,
+                                 Awh*                          awh,
+                                 gmx_enfrot*                   enforcedRotation,
+                                 ImdSession*                   imdSession,
+                                 pull_t*                       pull_work,
+                                 int64_t                       step,
+                                 double                        t,
+                                 gmx_wallcycle*                wcycle,
+                                 ForceProviders*               forceProviders,
+                                 const matrix                  box,
+                                 ArrayRef<const RVec>          x,
+                                 const MDAtoms&                mdAtoms,
+                                 ArrayRef<const real>          lambda,
+                                 const StepWorkload&           stepWork,
+                                 ForceWithVirial*              forceWithVirialMtsLevel0,
+                                 ForceWithVirial*              forceWithVirialMtsLevel1,
+                                 ForceWithShiftForces*         forceWithShiftForcesMtsLevel0,
+                                 const DDBalanceRegionHandler& ddBalanceRegionHandler,
+                                 gmx_enerdata_t*               enerd,
+                                 edsam*                        ed,
+                                 bool                          didNeighborSearch)
 {
     /* NOTE: Currently all ForceProviders only provide forces.
      *       When they also provide energies, remove this conditional.
@@ -660,7 +664,11 @@ static void computeSpecialForces(FILE*                fplog,
                 box,
                 mpiComm,
                 dd);
+        forceProviderInput.numAtomsWithHalo_ =
+                (dd != nullptr) ? dd_numAtomsZones(*dd) : mdAtoms.numHomeAtoms;
+        forceProviderInput.ddBalanceRegionHandler_ = &ddBalanceRegionHandler;
         ForceProviderOutput forceProviderOutput(forceWithVirialMtsLevel0, enerd);
+        forceProviderOutput.forceWithShiftForces_ = forceWithShiftForcesMtsLevel0;
 
         /* Collect forces from modules */
         forceProviders->calculateForces(forceProviderInput, &forceProviderOutput);
@@ -2322,6 +2330,8 @@ void do_force(FILE*                         fplog,
                              stepWork,
                              &forceOutMtsLevel0.forceWithVirial(),
                              forceOutMtsLevel1 ? &forceOutMtsLevel1->forceWithVirial() : nullptr,
+                             &forceOutMtsLevel0.forceWithShiftForces(),
+                             ddBalanceRegionHandler,
                              enerd,
                              ed,
                              stepWork.doNeighborSearch);

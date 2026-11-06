@@ -35,6 +35,7 @@ gmx_add_unit_test(MdtypesUnitTest mdtypes-test
     HARDWARE_DETECTION
     CPP_SOURCE_FILES
         enerdata.cpp
+        forceproviders.cpp
         observablesreducer.cpp
         checkpointdata.cpp
         multipletimestepping.cpp

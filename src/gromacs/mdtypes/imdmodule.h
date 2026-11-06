@@ -78,6 +78,12 @@ struct MDModuleDescriptor
      * interactions instead of the nonbonded kernels. At most one module may.
      */
     bool providesDirectCoulomb = false;
+    /*! \brief Whether the module writes forces on halo atoms
+     *
+     * A module that adds a force provider with ForceProviderAtoms::HomeAndHalo
+     * has to declare this.
+     */
+    bool writesHaloForces = false;
     //! The energy terms the module writes, which the host writes to the energy file
     std::vector<InteractionFunction> energyTerms;
 };

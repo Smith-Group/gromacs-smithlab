@@ -50,6 +50,7 @@
 
 #include "gromacs/applied_forces/electricfield.h"
 #include "gromacs/mdrunutility/mdmodulesnotifiers.h"
+#include "gromacs/mdtypes/iforceprovider.h"
 #include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/mdtypes/imdoutputprovider.h"
 #include "gromacs/mdtypes/imdpoptionprovider.h"
@@ -152,6 +153,38 @@ public:
 
 private:
     bool subscribesToMultisim_;
+};
+
+//! A force provider that adds no forces
+class NullForceProvider final : public IForceProvider
+{
+public:
+    void calculateForces(const ForceProviderInput& /* forceProviderInput */,
+                         ForceProviderOutput* /* forceProviderOutput */) override
+    {
+    }
+};
+
+//! A module that adds a force provider for halo atoms and declares what the test puts in \c descriptor_
+class HaloForceTestModule final : public IMDModule
+{
+public:
+    MDModuleDescriptor  descriptor() const override { return descriptor_; }
+    IMdpOptionProvider* mdpOptionProvider() override { return nullptr; }
+    IMDOutputProvider*  outputProvider() override { return nullptr; }
+    void                initForceProviders(ForceProviders* forceProviders) override
+    {
+        forceProviders->addForceProvider(&forceProvider_, "", ForceProviderAtoms::HomeAndHalo);
+    }
+    void subscribeToPreProcessingNotifications(MDModulesNotifiers* /* notifiers */) override {}
+    void subscribeToSimulationSetupNotifications(MDModulesNotifiers* /* notifiers */) override {}
+    void subscribeToSimulationRunNotifications(MDModulesNotifiers* /* notifiers */) override {}
+
+    //! What the module declares
+    MDModuleDescriptor descriptor_;
+
+private:
+    NullForceProvider forceProvider_;
 };
 
 //! Transforms flat mdp-style \c input with the rules of all modules in \c mdModules
@@ -266,6 +299,23 @@ TEST(MDModulesTest, AcceptsDeclaredMultisimSubscription)
     mdModules.assignOptionsToModules(params, nullptr, &ir);
     EXPECT_NO_THROW(mdModules.subscribeToSimulationSetupNotifications());
     EXPECT_TRUE(mdModules.anyModuleSharesStateAcrossSimulations());
+}
+
+TEST(MDModulesTest, RejectsHaloForceProviderWithoutDeclaration)
+{
+    MDModules mdModules;
+    mdModules.add("test", std::make_shared<HaloForceTestModule>());
+    EXPECT_THROW(mdModules.initForceProviders(nullptr), APIError);
+}
+
+TEST(MDModulesTest, AcceptsDeclaredHaloForceProvider)
+{
+    MDModules mdModules;
+    auto      module                     = std::make_shared<HaloForceTestModule>();
+    module->descriptor_.writesHaloForces = true;
+    mdModules.add("test", module);
+    const ForceProviders* forceProviders = mdModules.initForceProviders(nullptr);
+    EXPECT_EQ(forceProviders->numHaloForceProviders(), 1);
 }
 
 TEST(MDModulesTest, RejectsTwoDirectCoulombProviders)

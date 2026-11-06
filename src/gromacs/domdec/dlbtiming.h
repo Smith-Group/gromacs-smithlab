@@ -150,6 +150,23 @@ public:
         }
     }
 
+    /*! \brief Add CPU cycles spent after the region was closed on the CPU side
+     *
+     * For force computation that runs after closeAfterForceComputationCpu(),
+     * for instance between communication calls of a force provider.
+     * The cycles are added to the force load of the region that was closed,
+     * without reopening it.
+     *
+     * \param[in] cycles  The cycles spent on force computation
+     */
+    void addCyclesAfterForceComputationCpu(float cycles) const
+    {
+        if (useBalancingRegion_)
+        {
+            addCyclesAfterCloseCpuImpl(cycles);
+        }
+    }
+
     /*! \brief Close the load balance timing region on the GPU side
      *
      * This should be called after the CPU receives the last (local) results
@@ -185,6 +202,12 @@ private:
     /*! \brief Close the load balance timing region on the CPU side
      */
     void closeRegionCpuImpl() const;
+
+    /*! \brief Add CPU cycles spent after the region was closed on the CPU side
+     *
+     * \param[in] cycles  The cycles spent on force computation
+     */
+    void addCyclesAfterCloseCpuImpl(float cycles) const;
 
     /*! \brief Close the load balance timing region on the GPU side
      *
