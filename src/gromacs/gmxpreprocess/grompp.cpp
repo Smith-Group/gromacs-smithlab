@@ -2965,6 +2965,7 @@ int gmx_grompp(int argc, char* argv[])
     {
         KeyValueTreeBuilder internalParameterBuilder;
         mdModules.notifiers().preProcessingNotifier_.notify(internalParameterBuilder.rootObject());
+        mdModules.writePluginRecord(internalParameterBuilder.rootObject());
         ir->internalParameters = std::make_unique<KeyValueTreeObject>(internalParameterBuilder.build());
     }
 

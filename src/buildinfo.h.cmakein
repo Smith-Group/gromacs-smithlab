@@ -68,3 +68,6 @@
 
 /** Location of GROMACS-specific data files */
 #define GMX_INSTALL_GMXDATADIR  "@GMX_INSTALL_GMXDATADIR@"
+
+/** Directory of MDModules plugins, relative to the installation prefix */
+#define GMX_INSTALL_MDMODULE_PLUGINDIR "@GMX_INSTALL_MDMODULE_PLUGINDIR@"

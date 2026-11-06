@@ -321,3 +321,41 @@ note and, if it is not append-only, increments the major.
 
 The host describes itself to a plugin with gmx::hostApiInfo(), which returns
 the version, the size of `real` and the MPI of the host in a `GmxHostApiInfo`.
+
+Plugins
+-------
+
+A plugin is a shared module that defines four entry points with C linkage,
+declared in `gromacs/mdtypes/mdmoduleplugin.h`. A plugin defines them by
+including `gromacs/mdtypes/mdmodulepluginentrypoints.h` in one source file and
+using the macro once:
+
+```C++
+  GMX_MDMODULE_PLUGIN("my-module", "1.0", MyModuleInfo::create)
+```
+
+`MyModuleInfo::create` returns a `std::unique_ptr<gmx::IMDModule>`, as the
+built-in modules do. The plugin then refuses a host with another major version
+of the interface, another precision or another MPI than the \Gromacs it was
+built against.
+
+A run names its plugins in the mdp option `mdmodule-plugins`. \Gromacs is
+built with `-DGMX_MDMODULE_PLUGINS=ON` to load them; MDModules::addPlugins()
+loads them with gmx::loadMDModulePlugin():
+
+* The plugin of module `name` is the file `name.so` in the first directory of
+  `GMX_MDMODULE_PLUGIN_PATH` that has it, or in the plugin directory of the
+  installation. Other files in these directories are never opened.
+* The host asks the plugin whether it can run in the host and refuses it with
+  the plugin's reason and the host's facts when it cannot. It also refuses a
+  plugin that calls itself by another name.
+* The modules of plugins are added after the built-in modules and the modules
+  added with MDModules::add(), sorted by name, so the order of the mdp option
+  does not matter.
+* A plugin stays loaded until the program exits, because callbacks that its
+  module registered can outlive the module.
+
+grompp loads the plugins before it reads their mdp options, and writes their
+names and versions to the internal parameters in the tpr file. mdrun loads the
+plugins named there before it assigns the options, so a tpr file whose plugins
+cannot be loaded is refused.

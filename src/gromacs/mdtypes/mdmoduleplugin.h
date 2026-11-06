@@ -78,12 +78,55 @@ struct GmxHostApiInfo
     uint32_t mpi;
 };
 
+/*! \libinternal \brief
+ * Who a plugin is.
+ *
+ * Returned by the plugin's gmxPluginInfo() entry point, before the
+ * module is created. \c name is the name of the module; mdp files name
+ * the plugin by it, and the plugin file is named after it.
+ */
+struct GmxPluginInfo
+{
+    //! sizeof(GmxPluginInfo) in the plugin
+    uint32_t structSize;
+    //! The name of the module
+    const char* name;
+    //! The version of the plugin, for messages and the tpr record
+    const char* version;
+};
+
 namespace gmx
 {
+
+class IMDModule;
 
 //! Returns how this host was built
 GmxHostApiInfo hostApiInfo();
 
 } // namespace gmx
+
+extern "C"
+{
+    /*! \brief Entry point of a plugin: whether it can run in \p host
+     *
+     * When it cannot, it sets \p reason to a message that it owns.
+     */
+    using GmxPluginIsCompatibleFunction = bool (*)(const GmxHostApiInfo* host, const char** reason);
+    //! Entry point of a plugin: who it is
+    using GmxPluginInfoFunction = const GmxPluginInfo* (*)();
+    //! Entry point of a plugin: creates its module
+    using GmxPluginCreateFunction = gmx::IMDModule* (*)();
+    //! Entry point of a plugin: destroys a module that gmxPluginCreate() returned
+    using GmxPluginDestroyFunction = void (*)(gmx::IMDModule* module);
+}
+
+//! The names of the entry points of a plugin
+constexpr const char* c_gmxPluginIsCompatibleName = "gmxPluginIsCompatible";
+//! \copydoc c_gmxPluginIsCompatibleName
+constexpr const char* c_gmxPluginInfoName = "gmxPluginInfo";
+//! \copydoc c_gmxPluginIsCompatibleName
+constexpr const char* c_gmxPluginCreateName = "gmxPluginCreate";
+//! \copydoc c_gmxPluginIsCompatibleName
+constexpr const char* c_gmxPluginDestroyName = "gmxPluginDestroy";
 
 #endif

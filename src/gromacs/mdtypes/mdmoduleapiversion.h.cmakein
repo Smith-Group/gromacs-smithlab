@@ -47,5 +47,7 @@
 #define GMX_MDMODULE_API_MAJOR @GMX_MDMODULE_API_MAJOR@
 //! The hash of the MDModules plugin interface headers
 #define GMX_MDMODULE_API_HASH 0x@GMX_MDMODULE_API_HASH@ULL
+//! The MPI of this build: 0 none, 1 thread-MPI, 2 an MPI library
+#define GMX_MDMODULE_API_MPI @GMX_MDMODULE_API_MPI@
 
 #endif

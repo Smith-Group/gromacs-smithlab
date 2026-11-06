@@ -49,8 +49,9 @@ set(GMX_MDMODULE_API_HEADERS
     gromacs/mdtypes/imdmodule.h
     gromacs/mdtypes/imdoutputprovider.h
     gromacs/mdtypes/imdpoptionprovider.h
-    gromacs/mdtypes/mdmoduleplugin.h)
+    gromacs/mdtypes/mdmoduleplugin.h
+    gromacs/mdtypes/mdmodulepluginentrypoints.h)
 
 # The hash of these headers that the major was last checked for. A test
 # fails when the headers change without this hash being updated.
-set(GMX_MDMODULE_API_RECORDED_HASH "d42d23d0ab7bcb09")
+set(GMX_MDMODULE_API_RECORDED_HASH "6497d2f8ed950803")

@@ -54,12 +54,14 @@
 #include "gromacs/applied_forces/qmmm/qmmm.h"
 #include "gromacs/fmm/fmm_mdmodule.h"
 #include "gromacs/imd/imd.h"
+#include "gromacs/mdrun/mdmodulepluginloader.h"
 #include "gromacs/mdrunutility/mdmodulesnotifiers.h"
 #include "gromacs/mdtypes/iforceprovider.h"
 #include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/mdtypes/imdoutputprovider.h"
 #include "gromacs/mdtypes/imdpoptionprovider.h"
 #include "gromacs/mdtypes/inputrec.h"
+#include "gromacs/mdtypes/mdmoduleplugin.h"
 #include "gromacs/mdtypes/output_control.h"
 #include "gromacs/options/options.h"
 #include "gromacs/options/optionsection.h"
@@ -252,6 +254,9 @@ public:
 
     /*! \brief Registered modules, in registration order */
     std::vector<RegisteredModule> modules_;
+
+    //! Plugins whose modules are registered, in registration order
+    std::vector<MDModulePlugin> plugins_;
 };
 
 MDModules::MDModules() : impl_(new Impl) {}
@@ -482,6 +487,63 @@ bool MDModules::anyModuleProvidesDirectCoulomb() const
 const MDModulesNotifiers& MDModules::notifiers()
 {
     return impl_->notifiers_;
+}
+
+namespace
+{
+
+//! The key of the plugin record in the internal parameters
+const char* const c_pluginRecordKey = "mdmodule-plugins";
+
+} // namespace
+
+void MDModules::addPlugins(ArrayRef<const std::string> names, ArrayRef<const std::filesystem::path> searchPath)
+{
+    std::vector<std::string> sortedNames(names.begin(), names.end());
+    std::sort(sortedNames.begin(), sortedNames.end());
+    sortedNames.erase(std::unique(sortedNames.begin(), sortedNames.end()), sortedNames.end());
+    for (const std::string& name : sortedNames)
+    {
+        MDModulePlugin plugin = loadMDModulePlugin(name, searchPath);
+        impl_->add(plugin.name, plugin.module);
+        impl_->plugins_.push_back(std::move(plugin));
+    }
+}
+
+ArrayRef<const MDModulePlugin> MDModules::plugins() const
+{
+    return impl_->plugins_;
+}
+
+void MDModules::writePluginRecord(KeyValueTreeObjectBuilder builder) const
+{
+    if (impl_->plugins_.empty())
+    {
+        return;
+    }
+    const GmxHostApiInfo      host   = hostApiInfo();
+    KeyValueTreeObjectBuilder record = builder.addObject(c_pluginRecordKey);
+    for (const MDModulePlugin& plugin : impl_->plugins_)
+    {
+        KeyValueTreeObjectBuilder entry = record.addObject(plugin.name);
+        entry.addValue<std::string>("version", plugin.version);
+        entry.addValue<int64_t>("api-major", static_cast<int64_t>(host.apiMajor));
+        entry.addValue<std::string>(
+                "api-hash", formatString("%016llx", static_cast<unsigned long long>(host.apiHash)));
+    }
+}
+
+std::vector<std::string> MDModules::recordedPluginNames(const KeyValueTreeObject& internalParameters)
+{
+    std::vector<std::string> names;
+    if (internalParameters.keyExists(c_pluginRecordKey))
+    {
+        for (const auto& entry : internalParameters[c_pluginRecordKey].asObject().properties())
+        {
+            names.push_back(entry.key());
+        }
+    }
+    return names;
 }
 
 } // namespace gmx

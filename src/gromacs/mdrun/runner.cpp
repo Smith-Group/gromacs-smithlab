@@ -117,6 +117,7 @@
 #include "gromacs/mdlib/tgroup.h"
 #include "gromacs/mdlib/updategroups.h"
 #include "gromacs/mdlib/vsite.h"
+#include "gromacs/mdrun/mdmodulepluginloader.h"
 #include "gromacs/mdrun/mdmodules.h"
 #include "gromacs/mdrun/simulationcontext.h"
 #include "gromacs/mdrun/simulationinput.h"
@@ -1128,6 +1129,21 @@ int Mdrunner::mdrunner()
     for (const auto& factory : mdModuleFactories_)
     {
         mdModules_->add(factory.name, factory.make());
+    }
+    // The plugins that grompp loaded for this tpr, after all other modules
+    if (inputrec->internalParameters != nullptr)
+    {
+        mdModules_->addPlugins(MDModules::recordedPluginNames(*inputrec->internalParameters),
+                               mdModulePluginSearchPath());
+        for (const MDModulePlugin& plugin : mdModules_->plugins())
+        {
+            GMX_LOG(mdlog.info)
+                    .asParagraph()
+                    .appendTextFormatted("Loaded MDModules plugin %s version %s from %s",
+                                         plugin.name.c_str(),
+                                         plugin.version.c_str(),
+                                         plugin.path.c_str());
+        }
     }
 
     // TODO: Error handling

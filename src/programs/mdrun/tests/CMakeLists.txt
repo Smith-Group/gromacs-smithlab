@@ -286,11 +286,27 @@ gmx_add_gtest_executable(${exename} MPI
     CPP_SOURCE_FILES
         # files with code for tests
         haloforces.cpp
+        pluginforces.cpp
         stephooks.cpp
         # pseudo-library for code for mdrun
         $<TARGET_OBJECTS:mdrun_objlib>
         )
 target_link_libraries(${exename} PRIVATE mdrun_test_infrastructure pbcutil)
+if (GMX_MDMODULE_PLUGINS)
+    # A plugin that the tests name in the mdp file
+    set(_testPluginDirectory ${CMAKE_CURRENT_BINARY_DIR}/plugins)
+    add_library(mdrun-test-force-plugin MODULE plugins/forceplugin.cpp)
+    set_target_properties(mdrun-test-force-plugin PROPERTIES
+                          PREFIX ""
+                          OUTPUT_NAME test-force-plugin
+                          LIBRARY_OUTPUT_DIRECTORY ${_testPluginDirectory})
+    target_link_libraries(mdrun-test-force-plugin PRIVATE
+                          common legacy_api legacy_modules utility mdtypes libgromacs)
+    add_dependencies(${exename} mdrun-test-force-plugin)
+else()
+    set(_testPluginDirectory "")
+endif()
+target_compile_definitions(${exename} PRIVATE TEST_PLUGIN_DIRECTORY="${_testPluginDirectory}")
 gmx_register_gtest_test(MdrunModuleHooks1RankTests ${exename} MPI_RANKS 1 OPENMP_THREADS 2 INTEGRATION_TEST IGNORE_LEAKS QUICK_GPU_TEST)
 gmx_register_gtest_test(MdrunModuleHooks2RankTests ${exename} MPI_RANKS 2 OPENMP_THREADS 2 INTEGRATION_TEST IGNORE_LEAKS QUICK_GPU_TEST)
 gmx_register_gtest_test(MdrunModuleHooks4RankTests ${exename} MPI_RANKS 4 OPENMP_THREADS 1 INTEGRATION_TEST IGNORE_LEAKS QUICK_GPU_TEST)

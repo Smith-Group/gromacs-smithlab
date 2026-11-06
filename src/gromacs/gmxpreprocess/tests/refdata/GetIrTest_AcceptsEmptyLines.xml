@@ -286,6 +286,9 @@ simulated-tempering-scaling = geometric
 sim-temp-low             = 300
 sim-temp-high            = 300
 
+; MDModules plugins    
+mdmodule-plugins         = 
+
 ; Ion/water position swapping for computational electrophysiology setups
 ; Swap positions along direction: no, X, Y, Z
 swapcoords               = no

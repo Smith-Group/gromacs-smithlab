@@ -61,6 +61,7 @@
 #include "gromacs/mdlib/calc_verletbuf.h"
 #include "gromacs/mdlib/vcm.h"
 #include "gromacs/mdlib/vsite.h"
+#include "gromacs/mdrun/mdmodulepluginloader.h"
 #include "gromacs/mdrun/mdmodules.h"
 #include "gromacs/mdrunutility/mdmodulesnotifiers.h"
 #include "gromacs/mdtypes/awh_params.h"
@@ -2795,6 +2796,13 @@ void get_ir(const char*     mdparin,
     if (ir->efep == FreeEnergyPerturbationType::Expanded || ir->bSimTemp)
     {
         read_expandedparams(&inp, expand, wi);
+    }
+
+    /* MDModules plugins, which have to be loaded before their options are read */
+    printStringNewline(&inp, "MDModules plugins");
+    {
+        const std::string pluginNames = setStringEntry(&inp, "mdmodule-plugins", "");
+        mdModules->addPlugins(splitString(pluginNames), mdModulePluginSearchPath());
     }
 
     /* Electric fields */

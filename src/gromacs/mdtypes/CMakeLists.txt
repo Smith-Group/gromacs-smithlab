@@ -135,6 +135,13 @@ set(_mdmoduleApiHeaderPaths ${GMX_MDMODULE_API_HEADERS})
 list(TRANSFORM _mdmoduleApiHeaderPaths PREPEND "${PROJECT_SOURCE_DIR}/src/")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
              ${_mdmoduleApiHeaderPaths} ${CMAKE_CURRENT_SOURCE_DIR}/mdmoduleapi.cmake)
+if(GMX_LIB_MPI)
+    set(GMX_MDMODULE_API_MPI 2)
+elseif(GMX_THREAD_MPI)
+    set(GMX_MDMODULE_API_MPI 1)
+else()
+    set(GMX_MDMODULE_API_MPI 0)
+endif()
 configure_file(mdmoduleapiversion.h.cmakein
                ${PROJECT_BINARY_DIR}/src/include/gromacs/mdtypes/mdmoduleapiversion.h)
 

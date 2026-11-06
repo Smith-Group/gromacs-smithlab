@@ -42,10 +42,15 @@
 #ifndef GMX_MDRUN_MDMODULES_H
 #define GMX_MDRUN_MDMODULES_H
 
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
+
+#include "gromacs/mdrun/mdmodulepluginloader.h"
+#include "gromacs/utility/arrayref.h"
 
 struct gmx_wallcycle;
 struct t_inputrec;
@@ -273,6 +278,33 @@ public:
      * \throws APIError When a module with the given name is already added
      */
     void add(std::string_view name, std::shared_ptr<IMDModule> module);
+
+    /*! \brief Loads the plugins of the modules \p names and adds their modules.
+     *
+     * The plugins are looked for in \p searchPath, see
+     * mdModulePluginSearchPath(). Their modules are added after all
+     * modules added so far, sorted by name, so the order does not depend
+     * on the order of \p names. A name given twice is loaded once.
+     *
+     * \throws InvalidInputError when a plugin cannot be loaded, see
+     *         loadMDModulePlugin()
+     * \throws APIError when a module with the name of a plugin is already added
+     */
+    void addPlugins(ArrayRef<const std::string> names, ArrayRef<const std::filesystem::path> searchPath);
+
+    //! Returns the plugins loaded by addPlugins(), in the order their modules were added
+    ArrayRef<const MDModulePlugin> plugins() const;
+
+    /*! \brief Writes the name and version of each loaded plugin to \p builder
+     *
+     * grompp writes them to the internal parameters in the tpr, from
+     * which mdrun reads the names with recordedPluginNames(). Nothing is
+     * written when no plugin is loaded.
+     */
+    void writePluginRecord(KeyValueTreeObjectBuilder builder) const;
+
+    //! Returns the names of the plugins that writePluginRecord() wrote to \p internalParameters
+    static std::vector<std::string> recordedPluginNames(const KeyValueTreeObject& internalParameters);
 
     /*! \brief Returns whether a module declares that it shares state
      * across the simulations of a multi-simulation run.
