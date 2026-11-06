@@ -198,6 +198,8 @@ public:
      *
      * \p x_ holds them: the home atoms first, then the halo.
      * Without domain decomposition, this is \p homenr_.
+     * With direct halo communication, the home and the halo atoms include
+     * filler particles, whose global atom index in \p dd_ is -1.
      */
     int numAtomsWithHalo_ = 0;
     /*! \brief The dynamic load balancing region handler, can be nullptr

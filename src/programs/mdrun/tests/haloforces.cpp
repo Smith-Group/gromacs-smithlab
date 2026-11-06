@@ -60,6 +60,7 @@
 #include <gtest/gtest.h>
 
 #include "gromacs/domdec/domdec_struct.h"
+#include "gromacs/gpu_utils/capabilities.h"
 #include "gromacs/hardware/device_management.h"
 #include "gromacs/hardware/hw_info.h"
 #include "gromacs/mdrun/mdmodules.h"
@@ -125,6 +126,12 @@ public:
         const bool           virial      = output->forceWithShiftForces_->computeVirial();
         ArrayRef<const RVec> x           = input.x_;
 
+        // With direct halo communication, the local atoms include filler
+        // particles, which are not atoms
+        const auto isAtom = [&input](int localIndex) {
+            return input.dd_ == nullptr || isValidGlobalAtom(input.dd_->globalAtomIndices[localIndex]);
+        };
+
         // PBC only in the dimensions without domain decomposition,
         // the halo has the right images in the others
         t_pbc        pbc;
@@ -133,8 +140,16 @@ public:
 
         for (int i = 0; i < input.homenr_; i++)
         {
+            if (!isAtom(i))
+            {
+                continue;
+            }
             for (int j = i + 1; j < input.numAtomsWithHalo_; j++)
             {
+                if (!isAtom(j))
+                {
+                    continue;
+                }
                 RVec dx;
                 int  shift = c_centralShiftIndex;
                 if (pbcPtr != nullptr)
@@ -287,12 +302,19 @@ TEST_P(HaloForcesTest, ModuleForcesAndVirialMatchAnalyticalValues)
     const auto [nonbonded, update] = GetParam();
 #if GMX_GPU
     const bool haveCompatibleDevices = !getCompatibleDevices(s_hwinfo->deviceInfoList).empty();
+    const bool haveGpuUpdate         = GpuConfigurationCapabilities::UpdateLeapfrog
+                               && GpuConfigurationCapabilities::Constraints;
 #else
     const bool haveCompatibleDevices = false;
+    const bool haveGpuUpdate         = false;
 #endif
     if (nonbonded == "gpu" && !haveCompatibleDevices)
     {
         GTEST_SKIP() << "Needs a compatible GPU";
+    }
+    if (update == "gpu" && !haveGpuUpdate)
+    {
+        GTEST_SKIP() << "GPU update is not supported by this build";
     }
     if (update == "gpu" && nonbonded == "cpu")
     {
