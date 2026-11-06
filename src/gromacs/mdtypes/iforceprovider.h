@@ -343,7 +343,8 @@ struct PostEnergyInput
  * spread after the hooks.
  *
  * At steps that compute no energy, \p energyWasComputed_ is false; a
- * module that needs the energy asks for it with IStepPreparer.
+ * module that needs the energy asks for it with IStepPreparer. A module
+ * that adds such a hook declares MDModuleDescriptor::addsForcesAfterPotentialEnergy.
  *
  * \inlibraryapi
  * \ingroup module_mdtypes
@@ -432,6 +433,9 @@ public:
 
     //! Whether there are hooks that run after the potential energy is known
     bool hasPostEnergyProvider() const;
+
+    //! The number of hooks that run after the potential energy is known
+    int numPostEnergyProviders() const;
 
     /*! \brief
      * Prepares all components for a step.

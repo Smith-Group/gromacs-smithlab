@@ -1442,6 +1442,7 @@ int Mdrunner::mdrunner()
                 useModularSimulator,
                 doRerun,
                 devFlags.enableGpuVirtualSites,
+                mdModules_->anyModuleAddsForcesAfterPotentialEnergy(),
                 mdlog);
     }
     GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR
@@ -1875,12 +1876,9 @@ int Mdrunner::mdrunner()
             fr = std::make_unique<t_forcerec>(HostAllocationPolicy{});
         }
         fr->forceProviders = mdModules_->initForceProviders(wcycle.get());
-        if (useGpuForUpdate && fr->forceProviders->hasPostEnergyProvider())
-        {
-            GMX_THROW(InconsistentInputError(
-                    "A module computes forces after the potential energy is known, which needs "
-                    "the complete forces on the CPU; use -update cpu"));
-        }
+        GMX_RELEASE_ASSERT(!(useGpuForUpdate && fr->forceProviders->hasPostEnergyProvider()),
+                           "The update runs on the CPU when a module adds forces after the "
+                           "potential energy is known");
 
         // A module that declares that it provides the direct Coulomb interactions
         // replaces the nonbonded kernels for them; without one, no choice is made.

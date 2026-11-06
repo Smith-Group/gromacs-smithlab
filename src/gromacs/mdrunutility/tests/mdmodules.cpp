@@ -165,6 +165,37 @@ public:
     }
 };
 
+//! A hook after the potential energy that adds no forces
+class NullPostEnergyProvider final : public IPostEnergyProvider
+{
+public:
+    void applyAfterPotentialEnergy(const PostEnergyInput& /* input */, ForceProviderOutput* /* output */) override
+    {
+    }
+};
+
+//! A module that adds a hook after the potential energy and declares what the test puts in \c descriptor_
+class PostEnergyTestModule final : public IMDModule
+{
+public:
+    MDModuleDescriptor  descriptor() const override { return descriptor_; }
+    IMdpOptionProvider* mdpOptionProvider() override { return nullptr; }
+    IMDOutputProvider*  outputProvider() override { return nullptr; }
+    void                initForceProviders(ForceProviders* forceProviders) override
+    {
+        forceProviders->addPostEnergyProvider(&provider_, HookOrder{ StepPhase::EnergyDependent, 0 });
+    }
+    void subscribeToPreProcessingNotifications(MDModulesNotifiers* /* notifiers */) override {}
+    void subscribeToSimulationSetupNotifications(MDModulesNotifiers* /* notifiers */) override {}
+    void subscribeToSimulationRunNotifications(MDModulesNotifiers* /* notifiers */) override {}
+
+    //! What the module declares
+    MDModuleDescriptor descriptor_;
+
+private:
+    NullPostEnergyProvider provider_;
+};
+
 //! A module that adds a force provider for halo atoms and declares what the test puts in \c descriptor_
 class HaloForceTestModule final : public IMDModule
 {
@@ -316,6 +347,25 @@ TEST(MDModulesTest, AcceptsDeclaredHaloForceProvider)
     mdModules.add("test", module);
     const ForceProviders* forceProviders = mdModules.initForceProviders(nullptr);
     EXPECT_EQ(forceProviders->numHaloForceProviders(), 1);
+}
+
+TEST(MDModulesTest, RejectsPostEnergyHookWithoutDeclaration)
+{
+    MDModules mdModules;
+    mdModules.add("test", std::make_shared<PostEnergyTestModule>());
+    EXPECT_FALSE(mdModules.anyModuleAddsForcesAfterPotentialEnergy());
+    EXPECT_THROW(mdModules.initForceProviders(nullptr), APIError);
+}
+
+TEST(MDModulesTest, AcceptsDeclaredPostEnergyHook)
+{
+    MDModules mdModules;
+    auto      module                                   = std::make_shared<PostEnergyTestModule>();
+    module->descriptor_.addsForcesAfterPotentialEnergy = true;
+    mdModules.add("test", module);
+    EXPECT_TRUE(mdModules.anyModuleAddsForcesAfterPotentialEnergy());
+    const ForceProviders* forceProviders = mdModules.initForceProviders(nullptr);
+    EXPECT_EQ(forceProviders->numPostEnergyProviders(), 1);
 }
 
 TEST(MDModulesTest, RejectsTwoDirectCoulombProviders)

@@ -118,7 +118,8 @@ hooks in several phases.
 - gmx::IPostEnergyProvider::applyAfterPotentialEnergy() runs after the
   potential energy of the rank is accumulated and the forces on the home
   atoms are complete, in phase gmx::StepPhase::EnergyDependent or later,
-  e.g. to bias the potential energy. GPU update does not support it.
+  e.g. to bias the potential energy. Its module declares this in its
+  descriptor, and the update then runs on the CPU.
 
 Halo forces
 -----------

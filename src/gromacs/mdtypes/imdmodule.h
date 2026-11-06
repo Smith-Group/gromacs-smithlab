@@ -84,6 +84,12 @@ struct MDModuleDescriptor
      * has to declare this.
      */
     bool writesHaloForces = false;
+    /*! \brief Whether the module adds forces after the potential energy is known
+     *
+     * A module that adds an IPostEnergyProvider has to declare this. Such
+     * forces are added on the CPU, so the update then runs on the CPU.
+     */
+    bool addsForcesAfterPotentialEnergy = false;
     //! The energy terms the module writes, which the host writes to the energy file
     std::vector<InteractionFunction> energyTerms;
 };

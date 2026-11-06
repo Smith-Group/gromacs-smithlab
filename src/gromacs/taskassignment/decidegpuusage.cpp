@@ -732,6 +732,7 @@ bool decideWhetherToUseGpuForUpdate(const bool           isDomainDecomposition,
                                     const bool           useModularSimulator,
                                     const bool           doRerun,
                                     const bool           enableGpuVirtualSites,
+                                    const bool           moduleAddsForcesAfterEnergy,
                                     const gmx::MDLogger& mdlog)
 {
 
@@ -868,6 +869,8 @@ bool decideWhetherToUseGpuForUpdate(const bool           isDomainDecomposition,
                 "Virtual sites are not all within update groups while using domain decomposition.");
     }
     errorReasons.appendIf(useEssentialDynamics, "Essential dynamics is not supported.");
+    errorReasons.appendIf(moduleAddsForcesAfterEnergy,
+                          "A module adds forces after the potential energy is known.");
     errorReasons.appendIf((inputrec.bPull && pull_have_constraint(*inputrec.pull)),
                           "Constraints pulling is not supported.");
     errorReasons.appendIf(doOrientationRestraints,

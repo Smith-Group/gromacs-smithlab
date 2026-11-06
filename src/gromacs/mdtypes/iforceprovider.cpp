@@ -194,6 +194,11 @@ bool ForceProviders::hasPostEnergyProvider() const
     return !impl_->postEnergyProviders_.empty();
 }
 
+int ForceProviders::numPostEnergyProviders() const
+{
+    return gmx::ssize(impl_->postEnergyProviders_);
+}
+
 void ForceProviders::prepareStep(const StepInfo& stepInfo, StepRequest* request) const
 {
     for (IStepPreparer* preparer : impl_->stepPreparers_)

@@ -211,7 +211,9 @@ public:
      * \returns an object for computing forces from the modules.
      *
      * \throws APIError if a module adds a force provider for halo atoms
-     *         without declaring MDModuleDescriptor::writesHaloForces.
+     *         without declaring MDModuleDescriptor::writesHaloForces, or a hook
+     *         after the potential energy without declaring
+     *         MDModuleDescriptor::addsForcesAfterPotentialEnergy.
      */
     ForceProviders* initForceProviders(gmx_wallcycle* wallCycle);
 
@@ -278,6 +280,13 @@ public:
      * Valid after the options were assigned to the modules.
      */
     bool anyModuleSharesStateAcrossSimulations() const;
+
+    /*! \brief Returns whether a module declares that it adds forces
+     * after the potential energy is known.
+     *
+     * Valid after the options were assigned to the modules.
+     */
+    bool anyModuleAddsForcesAfterPotentialEnergy() const;
 
     /*! \brief Returns whether a module declares that it provides the
      * direct Coulomb interactions.

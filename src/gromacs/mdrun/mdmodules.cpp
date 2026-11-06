@@ -368,14 +368,24 @@ ForceProviders* MDModules::initForceProviders(gmx_wallcycle* wallCycle)
     impl_->forceProviders_ = std::make_unique<ForceProviders>(wallCycle);
     for (const auto& entry : impl_->modules_)
     {
-        const int numHaloForceProviders = impl_->forceProviders_->numHaloForceProviders();
+        const int numHaloForceProviders  = impl_->forceProviders_->numHaloForceProviders();
+        const int numPostEnergyProviders = impl_->forceProviders_->numPostEnergyProviders();
         entry.module->initForceProviders(impl_->forceProviders_.get());
+        const MDModuleDescriptor descriptor = entry.module->descriptor();
         if (impl_->forceProviders_->numHaloForceProviders() > numHaloForceProviders
-            && !entry.module->descriptor().writesHaloForces)
+            && !descriptor.writesHaloForces)
         {
             GMX_THROW(APIError(formatString(
                     "Module %s added a force provider for halo atoms without declaring "
                     "that it writes halo forces",
+                    entry.name.c_str())));
+        }
+        if (impl_->forceProviders_->numPostEnergyProviders() > numPostEnergyProviders
+            && !descriptor.addsForcesAfterPotentialEnergy)
+        {
+            GMX_THROW(APIError(formatString(
+                    "Module %s added a hook after the potential energy without declaring "
+                    "that it adds forces after the potential energy",
                     entry.name.c_str())));
         }
     }
@@ -438,6 +448,14 @@ bool MDModules::anyModuleSharesStateAcrossSimulations() const
                        impl_->modules_.end(),
                        [](const RegisteredModule& entry)
                        { return entry.module->descriptor().sharesStateAcrossSimulations; });
+}
+
+bool MDModules::anyModuleAddsForcesAfterPotentialEnergy() const
+{
+    return std::any_of(impl_->modules_.begin(),
+                       impl_->modules_.end(),
+                       [](const RegisteredModule& entry)
+                       { return entry.module->descriptor().addsForcesAfterPotentialEnergy; });
 }
 
 bool MDModules::anyModuleProvidesDirectCoulomb() const

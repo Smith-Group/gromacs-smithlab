@@ -95,6 +95,12 @@ struct PostEnergyCall
 class StepHooksModule final : public IMDModule, public IStepPreparer, public IPostEnergyProvider
 {
 public:
+    MDModuleDescriptor descriptor() const override
+    {
+        MDModuleDescriptor descriptor;
+        descriptor.addsForcesAfterPotentialEnergy = true;
+        return descriptor;
+    }
     IMdpOptionProvider* mdpOptionProvider() override { return nullptr; }
     IMDOutputProvider*  outputProvider() override { return nullptr; }
     void                initForceProviders(ForceProviders* forceProviders) override
