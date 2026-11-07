@@ -45,6 +45,7 @@
 #include "gromacs/fileio/boxcontainingfile.h"
 #include "gromacs/fileio/structurefile.h"
 #include "gromacs/fileio/topologyfile.h"
+#include "gromacs/fileio/trajectoryfile.h"
 
 namespace gmx
 {
@@ -58,5 +59,7 @@ MultimodelStructureFile::~MultimodelStructureFile() = default;
 BoxContainingFile::~BoxContainingFile() = default;
 
 TopologyFile::~TopologyFile() = default;
+
+TrajectoryFile::~TrajectoryFile() = default;
 
 } // namespace gmx

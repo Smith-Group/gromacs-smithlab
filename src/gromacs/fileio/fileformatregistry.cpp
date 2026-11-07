@@ -54,6 +54,8 @@
 #include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/stringutil.h"
 
+#include "trajectoryfileformats.h"
+
 namespace gmx
 {
 
@@ -71,6 +73,8 @@ struct LegacyFormat
     bool canRead;
     //! Whether the format can be written.
     bool canWrite;
+    //! Creates the file object, or nullptr if the format has none yet.
+    FilePointer (*factory)(const std::filesystem::path&, FileMode) = nullptr;
 };
 
 /*! \brief The formats that confio.h and trxio.h read and write.
@@ -80,8 +84,8 @@ struct LegacyFormat
  * efSTX, efSTO) are checked against this table by the tests.
  */
 const LegacyFormat c_legacyFormats[] = {
-    { efXTC, FileCapability::Trajectory, true, true },
-    { efTRR, FileCapability::Trajectory | FileCapability::Velocities, true, true },
+    { efXTC, FileCapability::Trajectory, true, true, createXtcFile },
+    { efTRR, FileCapability::Trajectory | FileCapability::Velocities, true, true, createTrrFile },
     { efCPT, FileCapability::Trajectory | FileCapability::Velocities, true, false },
     { efTNG, FileCapability::Trajectory | FileCapability::Velocities, true, true },
     { efH5MD, FileCapability::Trajectory | FileCapability::Velocities, true, true },
@@ -195,6 +199,10 @@ FileFormatRegistry::FileFormatRegistry()
         info.canRead      = format.canRead;
         info.canWrite     = format.canWrite;
         info.legacyType   = format.type;
+        if (format.factory != nullptr)
+        {
+            info.factory = format.factory;
+        }
         registerFormat(std::move(info));
     }
 }
