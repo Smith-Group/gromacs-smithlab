@@ -53,6 +53,10 @@ namespace gmx
 FilePointer createXtcFile(const std::filesystem::path& path, FileMode mode);
 //! Creates the file object for a TRR file.
 FilePointer createTrrFile(const std::filesystem::path& path, FileMode mode);
+//! Creates the file object for a TNG file.
+FilePointer createTngFile(const std::filesystem::path& path, FileMode mode);
+//! Creates the file object for an H5MD file.
+FilePointer createH5mdFile(const std::filesystem::path& path, FileMode mode);
 
 } // namespace gmx
 

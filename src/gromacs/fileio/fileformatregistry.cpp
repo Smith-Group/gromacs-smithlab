@@ -87,8 +87,8 @@ const LegacyFormat c_legacyFormats[] = {
     { efXTC, FileCapability::Trajectory, true, true, createXtcFile },
     { efTRR, FileCapability::Trajectory | FileCapability::Velocities, true, true, createTrrFile },
     { efCPT, FileCapability::Trajectory | FileCapability::Velocities, true, false },
-    { efTNG, FileCapability::Trajectory | FileCapability::Velocities, true, true },
-    { efH5MD, FileCapability::Trajectory | FileCapability::Velocities, true, true },
+    { efTNG, FileCapability::Trajectory | FileCapability::Velocities, true, true, createTngFile },
+    { efH5MD, FileCapability::Trajectory | FileCapability::Velocities, true, true, createH5mdFile },
     { efGRO,
       FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box
               | FileCapability::Trajectory | FileCapability::Velocities,

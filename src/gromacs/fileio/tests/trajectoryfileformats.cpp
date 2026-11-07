@@ -41,6 +41,8 @@
  */
 #include "gmxpre.h"
 
+#include "config.h"
+
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -252,6 +254,76 @@ TEST_F(TrajectoryFormatsTest, XtcRefusesAFrameWithoutPositions)
     setFrame(0);
     frame_.bX = false;
     EXPECT_THROW_GMX(file->writeFrame(frame_, {}), InvalidInputError);
+}
+
+TEST_F(TrajectoryFormatsTest, XtcKnowsTheTimeOfItsFinalFrame)
+{
+    const std::filesystem::path path = fileManager_.getTemporaryFilePath("frames.xtc");
+    writeThroughTrxio(path);
+
+    gmx_output_env_t* oenv;
+    output_env_init_default(&oenv);
+    t_trxstatus* status;
+    t_trxframe   frame;
+    ASSERT_TRUE(read_first_frame(oenv, &status, path, &frame, nullptr, TRX_NEED_X));
+    EXPECT_REAL_EQ(trx_get_time_of_final_frame(status), 1.0);
+    close_trx(status);
+    sfree(frame.x);
+    output_env_done(oenv);
+}
+
+TEST_F(TrajectoryFormatsTest, TngReadsThroughTheFileObject)
+{
+    if (!GMX_USE_TNG)
+    {
+        GTEST_SKIP() << "Built without TNG";
+    }
+    const std::filesystem::path path =
+            TestFileManager::getTestSimulationDatabaseDirectory().append("spc2-traj.tng");
+    std::unique_ptr<TrajectoryFile> file = openFileAs<TrajectoryFile>(path, FileMode::Read);
+    file->read();
+    t_trxframe frame;
+    clear_trxframe(&frame, true);
+    ASSERT_TRUE(file->readNextFrame(&frame, TRX_NEED_X));
+    EXPECT_EQ(frame.natoms, 6);
+    EXPECT_TRUE(frame.bX);
+    int numFrames = 1;
+    while (file->readNextFrame(&frame, TRX_NEED_X))
+    {
+        numFrames++;
+    }
+    EXPECT_GT(numFrames, 1);
+    done_frame(&frame);
+}
+
+TEST_F(TrajectoryFormatsTest, H5mdWritesAndReadsFrames)
+{
+    if (!GMX_USE_HDF5)
+    {
+        GTEST_SKIP() << "Built without HDF5";
+    }
+    const std::filesystem::path path = fileManager_.getTemporaryFilePath("frames.h5md");
+    writeThroughTrxio(path);
+
+    gmx_output_env_t* oenv;
+    output_env_init_default(&oenv);
+    t_trxstatus* status;
+    t_trxframe   frame;
+    ASSERT_TRUE(read_first_frame(oenv, &status, path, &frame, nullptr, TRX_NEED_X | TRX_READ_V));
+    EXPECT_EQ(frame.natoms, c_numAtoms);
+    EXPECT_EQ(frame.step, 0);
+    EXPECT_TRUE(frame.bV);
+    // With SZ3, positions are compressed to the precision of the frame
+    EXPECT_NEAR(frame.x[1][XX], 1.0, 1.0 / frame_.prec);
+    ASSERT_TRUE(read_next_frame(oenv, status, &frame));
+    EXPECT_EQ(frame.step, 10);
+    EXPECT_NEAR(frame.x[1][XX], 2.0, 1.0 / frame_.prec);
+    EXPECT_REAL_EQ(frame.box[XX][XX], 4.0F);
+    ASSERT_TRUE(read_next_frame(oenv, status, &frame));
+    EXPECT_FALSE(read_next_frame(oenv, status, &frame));
+    close_trx(status);
+    done_frame(&frame);
+    output_env_done(oenv);
 }
 
 } // namespace

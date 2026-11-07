@@ -281,34 +281,12 @@ t_fileio* trx_get_fileio(t_trxstatus* status)
 
 double trx_get_time_of_final_frame(t_trxstatus* status)
 {
-    t_fileio* stfio    = trx_get_fileio(status);
-    int       fileType = status->fileType;
-    gmx_bool  bOK;
-    double    lasttime = -1;
-
-    if (fileType == efXTC)
-    {
-        lasttime = xdr_xtc_get_last_frame_time(
-                gmx_fio_getfp(stfio), gmx_fio_getxdr(stfio), status->natoms, &bOK);
-        if (!bOK)
-        {
-            gmx_fatal(FARGS, "Error reading last frame. Maybe seek not supported.");
-        }
-    }
-    else if (fileType == efTNG)
-    {
-        gmx_tng_trajectory_t tng = status->tng;
-        if (!tng)
-        {
-            gmx_fatal(FARGS, "Error opening TNG file.");
-        }
-        lasttime = gmx_tng_get_time_of_final_frame(tng);
-    }
-    else
+    const std::optional<double> lasttime = status->file ? status->file->timeOfFinalFrame() : std::nullopt;
+    if (!lasttime.has_value())
     {
         gmx_incons("Only supported for TNG and XTC");
     }
-    return lasttime;
+    return lasttime.value();
 }
 
 void clear_trxframe(t_trxframe* fr, gmx_bool bFirst)
@@ -408,7 +386,6 @@ int write_trxframe_indexed(t_trxstatus* status, const t_trxframe* fr, int nind, 
     switch (status->fileType)
     {
         case efTNG: gmx_write_tng_from_trxframe(status->tng, fr, nind); break;
-        case efH5MD: throw gmx::NotImplementedError("H5MD reading/writing not yet implemented");
         case efGRO:
         case efPDB:
         case efBRK:
@@ -629,7 +606,6 @@ int write_trxframe(t_trxstatus* status, const t_trxframe* fr, gmx_conect gc)
 
     switch (status->fileType)
     {
-        case efH5MD: throw gmx::NotImplementedError("H5MD reading/writing not yet implemented");
         case efGRO:
         case efPDB:
         case efBRK:
@@ -930,8 +906,6 @@ bool read_next_frame(const gmx_output_env_t* oenv, t_trxstatus* status, t_trxfra
                     bRet = (fr->natoms > 0);
                     break;
                 }
-                case efTNG: bRet = gmx_read_next_tng_frame(status->tng, fr, nullptr, 0); break;
-                case efH5MD: bRet = status->h5md->readNextFrame(fr); break;
                 case efPDB: bRet = pdb_next_x(status, gmx_fio_getfp(status->fio), fr); break;
                 case efCIF: bRet = cif_next_x(status, fr); break;
                 case efGRO: bRet = gro_next_x_or_v(gmx_fio_getfp(status->fio), fr); break;
@@ -1016,16 +990,6 @@ bool read_first_frame(const gmx_output_env_t*      oenv,
         (*status)->file->read();
         fio = (*status)->fio = (*status)->file->legacyFileio();
     }
-    else if (efTNG == (*status)->fileType)
-    {
-        /* Special treatment for TNG files */
-        gmx_tng_open(fn, 'r', &(*status)->tng);
-    }
-    else if (efH5MD == (*status)->fileType)
-    {
-        (*status)->h5md = std::make_unique<gmx::H5md>(fn, gmx::H5mdFileMode('r'));
-        (*status)->h5md->setupFromExistingFile();
-    }
     else if ((*status)->fileType != efCPT)
     {
         fio = (*status)->fio = gmx_fio_open(fn, "r");
@@ -1063,36 +1027,10 @@ bool read_first_frame(const gmx_output_env_t*      oenv,
             break;
         }
         case efXTC:
+        case efTNG:
+        case efH5MD:
             if (!(*status)->file->readNextFrame(fr, flags))
             {
-                fr->natoms = 0;
-                printincomp(*status, fr);
-            }
-            else
-            {
-                printcount(*status, oenv, fr->time, FALSE);
-            }
-            bFirst = FALSE;
-            break;
-        case efTNG:
-            fr->step = -1;
-            if (!gmx_read_next_tng_frame((*status)->tng, fr, nullptr, 0))
-            {
-                fr->not_ok = DATA_NOT_OK;
-                fr->natoms = 0;
-                printincomp(*status, fr);
-            }
-            else
-            {
-                printcount(*status, oenv, fr->time, FALSE);
-            }
-            bFirst = FALSE;
-            break;
-        case efH5MD:
-            fr->step = -1;
-            if (!(*status)->h5md->readNextFrame(fr))
-            {
-                fr->not_ok = DATA_NOT_OK;
                 fr->natoms = 0;
                 printincomp(*status, fr);
             }

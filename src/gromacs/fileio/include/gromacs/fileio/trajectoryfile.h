@@ -42,6 +42,8 @@
 #ifndef GMX_FILEIO_TRAJECTORYFILE_H
 #define GMX_FILEIO_TRAJECTORYFILE_H
 
+#include <optional>
+
 #include "gromacs/fileio/file.h"
 #include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/real.h"
@@ -85,6 +87,12 @@ public:
      * \returns whether the position changed.
      */
     virtual bool seekToTime(real /*time*/) { return false; }
+
+    /*! \brief
+     * Returns the time of the last frame, when the format can find it
+     * without reading the frames before it.
+     */
+    virtual std::optional<double> timeOfFinalFrame() { return std::nullopt; }
 
     /*! \brief
      * Writes \p frame.
