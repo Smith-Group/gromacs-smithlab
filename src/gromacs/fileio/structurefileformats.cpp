@@ -580,7 +580,10 @@ class PqrFile : public BuiltinStructureFile<StructureFile>
 public:
     using BuiltinStructureFile::BuiltinStructureFile;
 
-    void        read() override { GMX_THROW(NotImplementedError("PQR files cannot be read")); }
+    [[noreturn]] void read() override
+    {
+        GMX_THROW(NotImplementedError("PQR files cannot be read"));
+    }
     void        write() override { writePdbModels(true); }
     bool        supportsMode(FileMode mode) const override { return mode == FileMode::Write; }
     const char* formatName() const override { return "PQR"; }
