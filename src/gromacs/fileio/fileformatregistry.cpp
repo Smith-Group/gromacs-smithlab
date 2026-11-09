@@ -54,6 +54,7 @@
 #include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/stringutil.h"
 
+#include "structurefileformats.h"
 #include "trajectoryfileformats.h"
 
 namespace gmx
@@ -93,31 +94,37 @@ const LegacyFormat c_legacyFormats[] = {
       FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box
               | FileCapability::Trajectory | FileCapability::Velocities,
       true,
-      true },
+      true,
+      createGroFile },
     { efG96,
       FileCapability::Structure | FileCapability::Box | FileCapability::Trajectory | FileCapability::Velocities,
       true,
-      true },
+      true,
+      createG96File },
     { efPDB,
       FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box
               | FileCapability::Topology | FileCapability::Trajectory,
       true,
-      true },
+      true,
+      createPdbFile },
     { efCIF,
       FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box
               | FileCapability::Topology | FileCapability::Trajectory,
       true,
-      true },
+      true,
+      createCifFile },
     { efBRK,
       FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box | FileCapability::Topology,
       true,
-      true },
+      true,
+      createPdbFile },
     { efENT,
       FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box | FileCapability::Topology,
       true,
-      true },
-    { efESP, FileCapability::Structure | FileCapability::Box | FileCapability::Velocities, true, true },
-    { efPQR, FileCapability::Structure | FileCapability::Box, false, true },
+      true,
+      createPdbFile },
+    { efESP, FileCapability::Structure | FileCapability::Box | FileCapability::Velocities, true, true, createEspFile },
+    { efPQR, FileCapability::Structure | FileCapability::Box, false, true, createPqrFile },
     { efTPR,
       FileCapability::Structure | FileCapability::Box | FileCapability::Topology | FileCapability::Velocities,
       true,

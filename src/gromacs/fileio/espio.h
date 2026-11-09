@@ -43,7 +43,7 @@
 struct t_atoms;
 struct t_symtab;
 
-void gmx_espresso_read_conf(const std::filesystem::path& infile,
+bool gmx_espresso_read_conf(const std::filesystem::path& infile,
                             t_symtab*                    symtab,
                             char**                       name,
                             t_atoms*                     atoms,
@@ -52,7 +52,7 @@ void gmx_espresso_read_conf(const std::filesystem::path& infile,
                             matrix                       box);
 /* If name is not nullptr, gmx_strdup the title string into
  * it. Reading a title from espresso format is not , so this will
- * always be an empty string. */
+ * always be an empty string. Returns whether the file has velocities. */
 
 int get_espresso_coordnum(const std::filesystem::path& infile);
 

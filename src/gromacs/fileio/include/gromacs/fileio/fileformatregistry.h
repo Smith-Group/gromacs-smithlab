@@ -46,8 +46,9 @@
  * A request the format cannot satisfy is refused with the name of the format
  * before any I/O is done.
  *
- * The formats that GROMACS reads and writes today are registered as
- * descriptions without a factory; formats move to file objects one at a time.
+ * Every format that GROMACS reads and writes is registered. The structure
+ * formats of confio.h have file objects; the others are descriptions without
+ * a factory until they move to file objects.
  * A format defined outside this module registers itself from its own
  * translation unit with a FileFormatRegistrar.
  *

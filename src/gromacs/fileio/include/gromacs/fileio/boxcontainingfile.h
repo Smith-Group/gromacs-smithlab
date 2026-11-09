@@ -76,6 +76,9 @@ public:
 
     //! Returns the periodic boundary type of the stored box.
     virtual PbcType getPbcType() const = 0;
+
+    //! Sets the periodic boundary type to be written with the box.
+    virtual void setPbcType(PbcType pbcType) = 0;
 };
 
 } // namespace gmx

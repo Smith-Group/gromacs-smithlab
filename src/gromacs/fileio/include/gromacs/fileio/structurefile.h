@@ -42,6 +42,8 @@
 #ifndef GMX_FILEIO_STRUCTUREFILE_H
 #define GMX_FILEIO_STRUCTUREFILE_H
 
+#include <string>
+
 #include "gromacs/fileio/file.h"
 #include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/vectypes.h"
@@ -78,6 +80,31 @@ public:
      * the existing data model: callers that use t_atoms keep working.
      */
     virtual const t_atoms* getAtoms() const = 0;
+
+    //! Returns the velocities of the current model, or an empty range if the file has none.
+    virtual ArrayRef<const RVec> getVelocities() const = 0;
+
+    //! Returns the title of the file, or an empty string if it has none.
+    virtual const std::string& getTitle() const = 0;
+
+    /*! \brief
+     * Sets the structure that write() writes.
+     *
+     * \p atoms, \p positions and \p velocities are not copied and must
+     * stay valid until write() returns. \p velocities may be empty.
+     * Clears any selection.
+     */
+    virtual void setStructure(const std::string&   title,
+                              const t_atoms&       atoms,
+                              ArrayRef<const RVec> positions,
+                              ArrayRef<const RVec> velocities) = 0;
+
+    /*! \brief
+     * Makes write() write only the particles in \p selection, in its order.
+     *
+     * \p selection is not copied and must stay valid until write() returns.
+     */
+    virtual void setSelection(ArrayRef<const int> selection) = 0;
 };
 
 /*! \libinternal \brief
