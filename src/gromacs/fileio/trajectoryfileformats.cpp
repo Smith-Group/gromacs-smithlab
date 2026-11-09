@@ -56,6 +56,7 @@
 #include "gromacs/fileio/gmxfio_xdr.h"
 #include "gromacs/fileio/h5md/binary_information.h"
 #include "gromacs/fileio/h5md/h5md.h"
+#include "gromacs/fileio/iohelper.h"
 #include "gromacs/fileio/tngio.h"
 #include "gromacs/fileio/trajectoryfile.h"
 #include "gromacs/fileio/trrio.h"
@@ -97,27 +98,19 @@ public:
         path_(std::move(path)), mode_(mode)
     {
     }
-    ~XdrTrajectoryFile() override
-    {
-        if (fio_ != nullptr)
-        {
-            gmx_fio_close(fio_);
-        }
-    }
-
-    void read() override { fio_ = gmx_fio_open(path_, "r"); }
-    void write() override { fio_ = gmx_fio_open(path_, mode_ == FileMode::Append ? "a" : "w"); }
+    void read() override { file_.open(path_, "r"); }
+    void write() override { file_.open(path_, mode_ == FileMode::Append ? "a" : "w"); }
     bool supportsMode(FileMode /*mode*/) const override { return true; }
 
-    t_fileio* legacyFileio() const override { return fio_; }
+    t_fileio* legacyFileio() const override { return file_.fileio(); }
 
 protected:
     //! The path of the file.
     std::filesystem::path path_;
     //! The mode the file is opened in.
     FileMode mode_;
-    //! The open file, or nullptr before read() or write().
-    t_fileio* fio_ = nullptr;
+    //! The open file, closed with the object.
+    IOHelper file_;
 };
 
 //! An XTC file.
@@ -137,7 +130,7 @@ public:
         {
             haveFrame =
                     (read_first_xtc(
-                             fio_, &frame->natoms, &frame->step, &time, frame->box, &frame->x, &frame->prec, &ok)
+                             file_.fileio(), &frame->natoms, &frame->step, &time, frame->box, &frame->x, &frame->prec, &ok)
                      != 0);
             if (!haveFrame)
             {
@@ -151,7 +144,8 @@ public:
         else
         {
             haveFrame =
-                    (read_next_xtc(fio_, numAtoms_, &frame->step, &time, frame->box, frame->x, &frame->prec, &ok)
+                    (read_next_xtc(
+                             file_.fileio(), numAtoms_, &frame->step, &time, frame->box, frame->x, &frame->prec, &ok)
                      != 0);
             if (!ok)
             {
@@ -175,7 +169,7 @@ public:
 
     bool seekToTime(real time) override
     {
-        if (xtc_seek_time(fio_, time, numAtoms_, TRUE))
+        if (xtc_seek_time(file_.fileio(), time, numAtoms_, TRUE))
         {
             gmx_fatal(FARGS,
                       "Specified frame (time %f) doesn't exist or file "
@@ -187,9 +181,9 @@ public:
 
     std::optional<double> timeOfFinalFrame() override
     {
-        gmx_bool     ok = FALSE;
-        const double time =
-                xdr_xtc_get_last_frame_time(gmx_fio_getfp(fio_), gmx_fio_getxdr(fio_), numAtoms_, &ok);
+        gmx_bool     ok   = FALSE;
+        const double time = xdr_xtc_get_last_frame_time(
+                file_.stream(), gmx_fio_getxdr(file_.fileio()), numAtoms_, &ok);
         if (!ok)
         {
             gmx_fatal(FARGS, "Error reading last frame. Maybe seek not supported.");
@@ -206,12 +200,12 @@ public:
         const real prec = frame.bPrec ? frame.prec : 1000.0;
         if (index.empty())
         {
-            write_xtc(fio_, frame.natoms, frame.step, frame.time, frame.box, frame.x, prec);
+            write_xtc(file_.fileio(), frame.natoms, frame.step, frame.time, frame.box, frame.x, prec);
         }
         else
         {
             const std::vector<RVec> x = selected(frame.x, index);
-            write_xtc(fio_, index.ssize(), frame.step, frame.time, frame.box, as_rvec_array(x.data()), prec);
+            write_xtc(file_.fileio(), index.ssize(), frame.step, frame.time, frame.box, as_rvec_array(x.data()), prec);
         }
     }
 
@@ -232,7 +226,7 @@ public:
     {
         gmx_trr_header_t header;
         gmx_bool         ok = FALSE;
-        if (!gmx_trr_read_frame_header(fio_, &header, &ok))
+        if (!gmx_trr_read_frame_header(file_.fileio(), &header, &ok))
         {
             if (!ok)
             {
@@ -244,7 +238,8 @@ public:
         frame->bStep  = TRUE;
         frame->step   = header.step;
         frame->bTime  = TRUE;
-        frame->timeIsDouble = (std::is_same_v<decltype(header.t), double> && gmx_fio_is_double(fio_));
+        frame->timeIsDouble =
+                (std::is_same_v<decltype(header.t), double> && gmx_fio_is_double(file_.fileio()));
         frame->time      = static_cast<double>(header.t);
         frame->bLambda   = TRUE;
         frame->bFepState = TRUE;
@@ -274,7 +269,7 @@ public:
             }
             frame->bF = header.f_size > 0;
         }
-        if (!gmx_trr_read_frame_data(fio_, &header, frame->box, frame->x, frame->v, frame->f))
+        if (!gmx_trr_read_frame_data(file_.fileio(), &header, frame->box, frame->x, frame->v, frame->f))
         {
             frame->not_ok = DATA_NOT_OK;
             return false;
@@ -286,7 +281,7 @@ public:
     {
         if (index.empty())
         {
-            gmx_trr_write_frame(fio_,
+            gmx_trr_write_frame(file_.fileio(),
                                 frame.step,
                                 frame.time,
                                 frame.lambda,
@@ -300,7 +295,7 @@ public:
         const std::vector<RVec> x = frame.bX ? selected(frame.x, index) : std::vector<RVec>();
         const std::vector<RVec> v = frame.bV ? selected(frame.v, index) : std::vector<RVec>();
         const std::vector<RVec> f = frame.bF ? selected(frame.f, index) : std::vector<RVec>();
-        gmx_trr_write_frame(fio_,
+        gmx_trr_write_frame(file_.fileio(),
                             frame.step,
                             frame.time,
                             frame.lambda,

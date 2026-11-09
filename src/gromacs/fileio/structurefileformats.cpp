@@ -66,6 +66,7 @@
 #include "gromacs/fileio/g96io.h"
 #include "gromacs/fileio/gmxfio.h"
 #include "gromacs/fileio/groio.h"
+#include "gromacs/fileio/iohelper.h"
 #include "gromacs/fileio/pdbio.h"
 #include "gromacs/fileio/structurefile.h"
 #include "gromacs/fileio/topologyfile.h"
@@ -234,10 +235,10 @@ protected:
         matrix box;
         boxForWriting(box);
         const std::vector<int> particles = particlesToWrite();
-        FILE*                  out       = gmx_fio_fopen(path_, "w");
+        IOHelper               out(path_, "w");
         for (int model = 0; model < numModels(); model++)
         {
-            write_pdbfile_indexed(out,
+            write_pdbfile_indexed(out.stream(),
                                   titleForWriting(),
                                   atomsForWriting(),
                                   positionsForWriting(model),
@@ -250,7 +251,6 @@ protected:
                                   nullptr,
                                   usePqrFormat);
         }
-        gmx_fio_fclose(out);
     }
 
     //! The path of the file.
@@ -335,31 +335,19 @@ public:
         Base(std::move(path)), mode_(mode)
     {
     }
-    ~BuiltinTrajectoryStructureFile() override
-    {
-        if (frames_ != nullptr)
-        {
-            gmx_fio_close(frames_);
-        }
-    }
-
-    void openForReadingFrames() override { frames_ = gmx_fio_open(this->path_, "r"); }
+    void openForReadingFrames() override { frames_.open(this->path_, "r"); }
     void openForWritingFrames() override
     {
-        frames_ = gmx_fio_open(this->path_, mode_ == FileMode::Append ? "a" : "w");
+        frames_.open(this->path_, mode_ == FileMode::Append ? "a" : "w");
     }
     bool      supportsMode(FileMode /*mode*/) const override { return true; }
-    t_fileio* legacyFileio() const override { return frames_; }
+    t_fileio* legacyFileio() const override { return frames_.fileio(); }
 
 protected:
     //! The stream of frames.
-    FILE* frameStream() const { return gmx_fio_getfp(frames_); }
+    FILE* frameStream() const { return frames_.stream(); }
     //! Opens the stream of frames again at the start of the file.
-    void reopenFramesForReading()
-    {
-        gmx_fio_close(frames_);
-        frames_ = gmx_fio_open(this->path_, "r");
-    }
+    void reopenFramesForReading() { frames_.open(this->path_, "r"); }
     //! Throws unless \p frame has positions, and particle names if \p needNames.
     void requireToWrite(const t_trxframe& frame, bool needNames) const
     {
@@ -386,8 +374,8 @@ protected:
 private:
     //! Whether frames replace the file or are added to it.
     FileMode mode_;
-    //! The stream of frames, or nullptr before it is opened.
-    t_fileio* frames_ = nullptr;
+    //! The stream of frames, closed with the object.
+    IOHelper frames_;
 };
 
 //! A GRO file. Several models or frames are written one after the other.
@@ -417,10 +405,10 @@ public:
         matrix box;
         boxForWriting(box);
         const std::vector<int> particles = particlesToWrite();
-        FILE*                  out       = gmx_fio_fopen(path_, "w");
+        IOHelper               out(path_, "w");
         for (int model = 0; model < numModels(); model++)
         {
-            write_hconf_indexed_p(out,
+            write_hconf_indexed_p(out.stream(),
                                   titleForWriting(),
                                   atomsForWriting(),
                                   gmx::ssize(particles),
@@ -429,7 +417,6 @@ public:
                                   model == 0 ? velocitiesForWriting() : nullptr,
                                   box);
         }
-        gmx_fio_fclose(out);
     }
     const char* formatName() const override { return "GRO"; }
 
@@ -472,14 +459,13 @@ public:
     {
         t_trxframe frame;
         char       line[STRLEN + 1];
-        frame.natoms       = -1;
-        frame.atoms        = nullptr;
-        frame.x            = nullptr;
-        frame.v            = nullptr;
-        frame.f            = nullptr;
-        FILE*     in       = gmx_fio_fopen(path_, "r");
-        const int numAtoms = read_g96_conf(in, path_, nullptr, &frame, nullptr, line);
-        gmx_fio_fclose(in);
+        frame.natoms = -1;
+        frame.atoms  = nullptr;
+        frame.x      = nullptr;
+        frame.v      = nullptr;
+        frame.f      = nullptr;
+        IOHelper  in(path_, "r");
+        const int numAtoms = read_g96_conf(in.stream(), path_, nullptr, &frame, nullptr, line);
 
         prepareForReading(numAtoms, false);
         char* title  = nullptr;
@@ -488,9 +474,9 @@ public:
         frame.x      = positionsForReading();
         frame.v      = velocitiesForReading();
         frame.f      = nullptr;
-        in           = gmx_fio_fopen(path_, "r");
-        read_g96_conf(in, path_, &title, &frame, symtabForReading(), line);
-        gmx_fio_fclose(in);
+        in.open(path_, "r");
+        read_g96_conf(in.stream(), path_, &title, &frame, symtabForReading(), line);
+        in.close();
         if (!frame.bBox)
         {
             clear_mat(frame.box);
@@ -514,13 +500,12 @@ public:
         frame.bBox = TRUE;
         boxForWriting(frame.box);
         const std::vector<int> particles = particlesToWrite();
-        FILE*                  out       = gmx_fio_fopen(path_, "w");
-        write_g96_conf(out,
+        IOHelper               out(path_, "w");
+        write_g96_conf(out.stream(),
                        titleForWriting(),
                        &frame,
                        haveSelection() ? gmx::ssize(particles) : -1,
                        haveSelection() ? particles.data() : nullptr);
-        gmx_fio_fclose(out);
     }
     const char* formatName() const override { return "G96"; }
 
@@ -578,10 +563,11 @@ public:
 
     void read() override
     {
-        FILE* in       = gmx_fio_fopen(path_, "r");
-        int   numAtoms = 0;
-        get_pdb_coordnum(in, &numAtoms);
-        gmx_fio_fclose(in);
+        int numAtoms = 0;
+        {
+            IOHelper in(path_, "r");
+            get_pdb_coordnum(in.stream(), &numAtoms);
+        }
         prepareForReading(numAtoms, fn2ftp(path_) == efPDB);
         char*   title = nullptr;
         matrix  box;
@@ -733,10 +719,10 @@ public:
                                 particles.data());
             return;
         }
-        FILE* out = gmx_fio_fopen(path_, "w");
+        IOHelper out(path_, "w");
         for (int model = 0; model < numModels(); model++)
         {
-            CifIO::writeTrajectoryFrame(out,
+            CifIO::writeTrajectoryFrame(out.stream(),
                                         titleForWriting(),
                                         atomsForWriting(),
                                         positionsForWriting(model),
@@ -746,7 +732,6 @@ public:
                                         model + 1,
                                         model == 0);
         }
-        gmx_fio_fclose(out);
     }
     const char* formatName() const override { return "mmCIF"; }
 
@@ -833,8 +818,8 @@ public:
         matrix box;
         boxForWriting(box);
         const std::vector<int> particles = particlesToWrite();
-        FILE*                  out       = gmx_fio_fopen(path_, "w");
-        write_espresso_conf_indexed(out,
+        IOHelper               out(path_, "w");
+        write_espresso_conf_indexed(out.stream(),
                                     titleForWriting(),
                                     atomsForWriting(),
                                     gmx::ssize(particles),
@@ -842,7 +827,6 @@ public:
                                     positionsForWriting(0),
                                     velocitiesForWriting(),
                                     box);
-        gmx_fio_fclose(out);
     }
     bool supportsMode(FileMode mode) const override
     {
