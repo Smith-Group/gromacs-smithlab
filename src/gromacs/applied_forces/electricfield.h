@@ -79,6 +79,13 @@ struct ElectricFieldModuleInfo
      * Solution: implement a self-consistent electric field into PME.
      */
     static std::unique_ptr<IMDModule> create();
+    /*! \brief Creates a module whose mdp options and output are named
+     * after \p name instead of sc_name
+     *
+     * The tests build the module as a plugin with another name, which
+     * can be loaded next to the built-in module.
+     */
+    static std::unique_ptr<IMDModule> create(std::string_view name);
     //! The name of the module
     static constexpr std::string_view sc_name = "electric-field";
 };

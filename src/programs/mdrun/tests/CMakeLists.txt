@@ -303,6 +303,21 @@ if (GMX_MDMODULE_PLUGINS)
     target_link_libraries(mdrun-test-force-plugin PRIVATE
                           common legacy_api legacy_modules utility mdtypes libgromacs)
     add_dependencies(${exename} mdrun-test-force-plugin)
+    # The electric field built as a plugin from its own source. The plugin
+    # binds its calls to its own copy of the module, not to the one in libgromacs.
+    add_library(mdrun-test-electric-field-plugin MODULE
+                plugins/electricfieldplugin.cpp
+                ${PROJECT_SOURCE_DIR}/src/gromacs/applied_forces/electricfield.cpp)
+    set_target_properties(mdrun-test-electric-field-plugin PROPERTIES
+                          PREFIX ""
+                          OUTPUT_NAME electric-field-plugin
+                          LIBRARY_OUTPUT_DIRECTORY ${_testPluginDirectory})
+    target_link_libraries(mdrun-test-electric-field-plugin PRIVATE
+                          common legacy_api legacy_modules utility mdtypes libgromacs)
+    if(NOT APPLE)
+        target_link_options(mdrun-test-electric-field-plugin PRIVATE LINKER:-Bsymbolic-functions)
+    endif()
+    add_dependencies(${exename} mdrun-test-electric-field-plugin)
 else()
     set(_testPluginDirectory "")
 endif()

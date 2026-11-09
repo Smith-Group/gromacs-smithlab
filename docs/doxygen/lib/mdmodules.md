@@ -380,3 +380,7 @@ module include, the thread-MPI headers of a thread-MPI build, and the generated
 `gromacs/mdtypes/mdmoduleapiversion.h`. Each module installs its headers in
 the file set `mdmodule_plugin_headers`. The imported target
 `Gromacs::libgromacs` gives a plugin the definitions that these headers need.
+
+The mdrun tests build the electric field as a plugin from its own source,
+under the name `electric-field-plugin`, and check that it gives the forces of
+the built-in module.

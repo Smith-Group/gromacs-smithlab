@@ -160,6 +160,51 @@ TEST_F(MDModulePluginTest, PluginNamedInMdpAddsItsForce)
     }
 }
 
+TEST_F(MDModulePluginTest, ElectricFieldPluginGivesTheForcesOfTheBuiltInModule)
+{
+    if (!GMX_MDMODULE_PLUGINS)
+    {
+        GTEST_SKIP() << "Needs a build with GMX_MDMODULE_PLUGINS=ON";
+    }
+    const PluginPathSetter pluginPath(TEST_PLUGIN_DIRECTORY);
+
+    const std::string simulationName = "spc216";
+    const int         nsteps         = 2;
+    auto              mdpFieldValues = prepareMdpFieldValues(simulationName, "md", "no", "no");
+    mdpFieldValues["nsteps"]         = std::to_string(nsteps);
+    mdpFieldValues["nstxout"]        = std::to_string(nsteps);
+    mdpFieldValues["nstfout"]        = std::to_string(nsteps);
+    mdpFieldValues["nstvout"]        = "0";
+    runner_.useTopGroAndNdxFromDatabase(simulationName);
+
+    // A static field of 1 V/nm along z, from the module named in extraMdp
+    const auto runWith = [&](const std::string& extraMdp, const std::string& trajectoryName)
+    {
+        runner_.useStringAsMdpFile(prepareMdpFileContents(mdpFieldValues) + extraMdp);
+        EXPECT_EQ(0, runner_.callGrompp());
+        const std::string trajectory = fileManager_.getTemporaryFilePath(trajectoryName).string();
+        runner_.fullPrecisionTrajectoryFileName_ = trajectory;
+        EXPECT_EQ(0, runner_.callMdrun());
+        return readFirstForces(trajectory);
+    };
+    const std::vector<RVec> withoutField = runWith("", "without.trr");
+    const std::vector<RVec> builtIn      = runWith("\nelectric-field-z = 1 0 0 0\n", "builtin.trr");
+    const std::vector<RVec> plugin       = runWith(
+            "\nmdmodule-plugins = electric-field-plugin\nelectric-field-plugin-z = 1 0 0 0\n",
+            "plugin.trr");
+
+    ASSERT_EQ(builtIn.size(), withoutField.size());
+    ASSERT_EQ(plugin.size(), builtIn.size());
+    EXPECT_NE(builtIn[0][ZZ], withoutField[0][ZZ]) << "the field should move the charged atoms";
+    const FloatingPointTolerance tolerance = defaultRealTolerance();
+    for (size_t atom = 0; atom < plugin.size(); atom++)
+    {
+        EXPECT_REAL_EQ_TOL(plugin[atom][XX], builtIn[atom][XX], tolerance) << "atom " << atom;
+        EXPECT_REAL_EQ_TOL(plugin[atom][YY], builtIn[atom][YY], tolerance) << "atom " << atom;
+        EXPECT_REAL_EQ_TOL(plugin[atom][ZZ], builtIn[atom][ZZ], tolerance) << "atom " << atom;
+    }
+}
+
 TEST_F(MDModulePluginTest, GromppRefusesPluginThatIsNotFound)
 {
     if (!GMX_MDMODULE_PLUGINS)

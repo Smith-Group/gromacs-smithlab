@@ -115,9 +115,9 @@ public:
     /*! \brief
      * Creates mdp parameters for this field component.
      */
-    void buildMdpOutput(KeyValueTreeObjectBuilder* builder, const std::string& name) const
+    void buildMdpOutput(KeyValueTreeObjectBuilder* builder, const std::string& key) const
     {
-        builder->addUniformArray<real>("electric-field-" + name, { a_, omega_, t0_, sigma_ });
+        builder->addUniformArray<real>(key, { a_, omega_, t0_, sigma_ });
     }
 
     /*! \brief Evaluates this field component at given time.
@@ -161,7 +161,11 @@ private:
 class ElectricField final : public IMDModule, public IMdpOptionProvider, public IMDOutputProvider, public IForceProvider
 {
 public:
-    ElectricField() : fpField_(nullptr) {}
+    /*! \brief Constructs a module whose mdp options and output are named after \p name
+     *
+     * \p name is ElectricFieldModuleInfo::sc_name for the built-in module.
+     */
+    explicit ElectricField(std::string_view name) : name_(name), fpField_(nullptr) {}
 
     // From IMDModule
     IMdpOptionProvider* mdpOptionProvider() override { return this; }
@@ -213,6 +217,8 @@ private:
      */
     void printComponents(double t) const;
 
+    //! The name of the module, which its mdp options and output use
+    std::string name_;
     //! The components of the applied electric field in each coordinate dimension
     ElectricFieldDimension efield_[DIM];
     //! File pointer for electric field
@@ -239,14 +245,18 @@ void convertParameters(gmx::KeyValueTreeObjectBuilder* builder, const std::strin
 
 void ElectricField::initMdpTransform(IKeyValueTreeTransformRules* rules)
 {
-    rules->addRule().from<std::string>("/electric-field-x").toObject("/electric-field/x").transformWith(&convertParameters);
-    rules->addRule().from<std::string>("/electric-field-y").toObject("/electric-field/y").transformWith(&convertParameters);
-    rules->addRule().from<std::string>("/electric-field-z").toObject("/electric-field/z").transformWith(&convertParameters);
+    for (const char* dimension : { "x", "y", "z" })
+    {
+        rules->addRule()
+                .from<std::string>("/" + name_ + "-" + dimension)
+                .toObject("/" + name_ + "/" + dimension)
+                .transformWith(&convertParameters);
+    }
 }
 
 void ElectricField::initMdpOptions(IOptionsContainerWithSections* options)
 {
-    auto section = options->addSection(OptionSection("electric-field"));
+    auto section = options->addSection(OptionSection(name_.c_str()));
     efield_[XX].initMdpOptions(&section, "x");
     efield_[YY].initMdpOptions(&section, "y");
     efield_[ZZ].initMdpOptions(&section, "z");
@@ -254,16 +264,14 @@ void ElectricField::initMdpOptions(IOptionsContainerWithSections* options)
 
 void ElectricField::buildMdpOutput(KeyValueTreeObjectBuilder* builder) const
 {
-    std::string comment =
-            R"(; Electric fields
-; Format for electric-field-x, etc. is: four real variables:
+    std::string comment = "; Electric fields\n; Format for " + name_ + R"(-x, etc. is: four real variables:
 ; amplitude (V/nm), frequency omega (1/ps), time for the pulse peak (ps),
 ; and sigma (ps) width of the pulse. Omega = 0 means static field,
 ; sigma = 0 means no pulse, leaving the field to be a cosine function.)";
-    builder->addValue<std::string>("comment-electric-field", comment);
-    efield_[XX].buildMdpOutput(builder, "x");
-    efield_[YY].buildMdpOutput(builder, "y");
-    efield_[ZZ].buildMdpOutput(builder, "z");
+    builder->addValue<std::string>("comment-" + name_, comment);
+    efield_[XX].buildMdpOutput(builder, name_ + "-x");
+    efield_[YY].buildMdpOutput(builder, name_ + "-y");
+    efield_[ZZ].buildMdpOutput(builder, name_ + "-z");
 }
 
 void ElectricField::initOutput(FILE* fplog, int nfile, const t_filenm fnm[], bool bAppendFiles, const gmx_output_env_t* oenv)
@@ -354,7 +362,12 @@ void ElectricField::calculateForces(const ForceProviderInput& forceProviderInput
 
 std::unique_ptr<IMDModule> ElectricFieldModuleInfo::create()
 {
-    return std::make_unique<ElectricField>();
+    return create(sc_name);
+}
+
+std::unique_ptr<IMDModule> ElectricFieldModuleInfo::create(std::string_view name)
+{
+    return std::make_unique<ElectricField>(name);
 }
 
 } // namespace gmx
