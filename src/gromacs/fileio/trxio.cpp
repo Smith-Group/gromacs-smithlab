@@ -128,7 +128,9 @@ static std::unique_ptr<gmx::TrajectoryFile> openTrajectoryFile(const std::filesy
                                                                gmx::FileMode                mode)
 {
     const gmx::FileFormatInfo* format = gmx::FileFormatRegistry::instance().formatOf(path);
-    if (format == nullptr || !format->factory)
+    // A format whose file object does not yet read and write frames keeps the code below.
+    if (format == nullptr || !format->factory
+        || dynamic_cast<const gmx::TrajectoryFile*>(format->factory(path, mode).get()) == nullptr)
     {
         return nullptr;
     }
