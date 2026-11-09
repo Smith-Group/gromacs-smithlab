@@ -145,6 +145,30 @@ endif()
 configure_file(mdmoduleapiversion.h.cmakein
                ${PROJECT_BINARY_DIR}/src/include/gromacs/mdtypes/mdmoduleapiversion.h)
 
+# Headers that MDModules plugins need beyond the legacy API, installed
+# when plugins can be loaded
+if(GMX_MDMODULE_PLUGINS)
+    target_sources(mdtypes
+        INTERFACE
+            FILE_SET mdmodule_plugin_headers
+            TYPE HEADERS
+            BASE_DIRS ${PROJECT_SOURCE_DIR}/src
+            FILES
+                forceoutput.h
+                iforceprovider.h
+                imdmodule.h
+                imdoutputprovider.h
+                imdpoptionprovider.h
+                mdmoduleplugin.h
+                mdmodulepluginentrypoints.h
+    )
+    if(GMX_INSTALL_LEGACY_API)
+        install(TARGETS mdtypes FILE_SET mdmodule_plugin_headers DESTINATION include)
+        install(FILES ${PROJECT_BINARY_DIR}/src/include/gromacs/mdtypes/mdmoduleapiversion.h
+                DESTINATION include/gromacs/mdtypes)
+    endif()
+endif()
+
 if (BUILD_TESTING)
     add_subdirectory(tests)
 endif()

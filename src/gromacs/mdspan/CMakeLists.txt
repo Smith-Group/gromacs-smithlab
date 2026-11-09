@@ -38,6 +38,26 @@ add_library(mdspan INTERFACE)
 # target_include_directories(mdspan INTERFACE
 #         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 
+# Headers that MDModules plugins need beyond the legacy API, installed
+# when plugins can be loaded
+if(GMX_MDMODULE_PLUGINS)
+    target_sources(mdspan
+        INTERFACE
+            FILE_SET mdmodule_plugin_headers
+            TYPE HEADERS
+            BASE_DIRS ${PROJECT_SOURCE_DIR}/src
+            FILES
+                accessor_policy.h
+                extensions.h
+                extents.h
+                layouts.h
+                mdspan.h
+    )
+    if(GMX_INSTALL_LEGACY_API)
+        install(TARGETS mdspan FILE_SET mdmodule_plugin_headers DESTINATION include)
+    endif()
+endif()
+
 if (BUILD_TESTING)
     add_subdirectory(tests)
 endif()

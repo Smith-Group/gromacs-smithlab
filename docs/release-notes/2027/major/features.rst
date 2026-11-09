@@ -158,5 +158,6 @@ of the plugin interface, another precision or another MPI. A plugin
 built against one release loads on every release with the same major
 version of the interface, which does not change within a release
 series. Building with plugin support needs
-``-DGMX_MDMODULE_PLUGINS=ON``.
+``-DGMX_MDMODULE_PLUGINS=ON``. With ``-DGMX_INSTALL_LEGACY_API=ON`` too,
+|Gromacs| installs the headers that a plugin is built against.
 :issue:`5773`

@@ -372,3 +372,11 @@ names, versions and the version of the interface they were built against to
 the internal parameters in the tpr file. mdrun loads the plugins named there
 before it assigns the options, so a tpr file whose plugins cannot be loaded is
 refused.
+
+A plugin is built against an installed \Gromacs. When \Gromacs is configured
+with `-DGMX_MDMODULE_PLUGINS=ON` and `-DGMX_INSTALL_LEGACY_API=ON`, it installs
+the headers of the plugin interface and the headers that they and a typical
+module include, the thread-MPI headers of a thread-MPI build, and the generated
+`gromacs/mdtypes/mdmoduleapiversion.h`. Each module installs its headers in
+the file set `mdmodule_plugin_headers`. The imported target
+`Gromacs::libgromacs` gives a plugin the definitions that these headers need.
