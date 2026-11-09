@@ -48,11 +48,14 @@
 #include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/real.h"
 
+struct gmx_tng_trajectory;
 struct t_fileio;
 struct t_trxframe;
 
 namespace gmx
 {
+
+class H5md;
 
 /*! \libinternal \brief
  * A file that carries a sequence of frames.
@@ -111,6 +114,20 @@ public:
      * work on it.
      */
     virtual t_fileio* legacyFileio() const { return nullptr; }
+    /*! \brief
+     * Returns the open TNG file, or nullptr for another format.
+     *
+     * trjtools_gmx_prepare_tng_writing() copies the setup of an input
+     * TNG file from it.
+     */
+    virtual gmx_tng_trajectory* legacyTng() const { return nullptr; }
+    /*! \brief
+     * Returns the open H5MD file, or nullptr for another format.
+     *
+     * trjtools_gmx_prepare_h5md_writing() copies the metadata of an
+     * input H5MD file from it.
+     */
+    virtual const H5md* legacyH5md() const { return nullptr; }
 };
 
 } // namespace gmx

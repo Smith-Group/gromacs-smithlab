@@ -353,6 +353,7 @@ public:
     {
         return gmx_tng_get_time_of_final_frame(tng_);
     }
+    gmx_tng_trajectory* legacyTng() const override { return tng_; }
     [[noreturn]] void writeFrame(const t_trxframe& /*frame*/, ArrayRef<const int> /*index*/) override
     {
         GMX_THROW(NotImplementedError(
@@ -382,6 +383,7 @@ public:
     void        write() override { h5md_ = std::make_unique<H5md>(path_, H5mdFileMode::Write); }
     bool        supportsMode(FileMode mode) const override { return mode != FileMode::Append; }
     const char* formatName() const override { return "H5MD"; }
+    const H5md* legacyH5md() const override { return h5md_.get(); }
 
     bool readNextFrame(t_trxframe* frame, int /*flags*/) override
     {

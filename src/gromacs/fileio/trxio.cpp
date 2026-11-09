@@ -486,8 +486,9 @@ t_trxstatus* trjtools_gmx_prepare_tng_writing(const std::filesystem::path& filen
 
     if (in != nullptr)
     {
+        gmx_tng_trajectory_t inputTng = in->file ? in->file->legacyTng() : in->tng;
         gmx_prepare_tng_writing(
-                filename, filemode, &in->tng, &out->tng, natoms, mtop, index, index_group_name);
+                filename, filemode, &inputTng, &out->tng, natoms, mtop, index, index_group_name);
     }
     else if (fn2ftp(infile) == efTNG)
     {
@@ -520,11 +521,17 @@ t_trxstatus* trjtools_gmx_prepare_h5md_writing(const std::filesystem::path& outp
     // data, but for now we only allow new files to be created.
     outputFileStatus->fileType = efH5MD;
     outputFileStatus->h5md = std::make_unique<gmx::H5md>(outputFileName, gmx::H5mdFileMode::Write);
-    if (inputFileStatus != nullptr && inputFileStatus->h5md != nullptr)
+    const gmx::H5md* inputH5md = nullptr;
+    if (inputFileStatus != nullptr)
+    {
+        inputH5md = inputFileStatus->file ? inputFileStatus->file->legacyH5md()
+                                          : inputFileStatus->h5md.get();
+    }
+    if (inputH5md != nullptr)
     {
         try
         {
-            outputFileStatus->h5md->setupFromOtherFile(*inputFileStatus->h5md, index, "system");
+            outputFileStatus->h5md->setupFromOtherFile(*inputH5md, index, "system");
         }
         catch (const gmx::FileIOError&)
         {

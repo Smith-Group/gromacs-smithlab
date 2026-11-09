@@ -296,6 +296,36 @@ TEST_F(TrajectoryFormatsTest, TngReadsThroughTheFileObject)
     done_frame(&frame);
 }
 
+TEST_F(TrajectoryFormatsTest, TngGivesTheTngWriterItsOpenFile)
+{
+    if (!GMX_USE_TNG)
+    {
+        GTEST_SKIP() << "Built without TNG";
+    }
+    const std::filesystem::path path =
+            TestFileManager::getTestSimulationDatabaseDirectory().append("spc2-traj.tng");
+    std::unique_ptr<TrajectoryFile> file = openFileAs<TrajectoryFile>(path, FileMode::Read);
+    EXPECT_EQ(file->legacyTng(), nullptr);
+    file->read();
+    EXPECT_NE(file->legacyTng(), nullptr);
+    EXPECT_EQ(file->legacyH5md(), nullptr);
+}
+
+TEST_F(TrajectoryFormatsTest, H5mdGivesTheH5mdWriterItsOpenFile)
+{
+    if (!GMX_USE_HDF5)
+    {
+        GTEST_SKIP() << "Built without HDF5";
+    }
+    const std::filesystem::path path =
+            TestFileManager::getTestSimulationDatabaseDirectory().append("spc2-traj.h5md");
+    std::unique_ptr<TrajectoryFile> file = openFileAs<TrajectoryFile>(path, FileMode::Read);
+    EXPECT_EQ(file->legacyH5md(), nullptr);
+    file->read();
+    EXPECT_NE(file->legacyH5md(), nullptr);
+    EXPECT_EQ(file->legacyTng(), nullptr);
+}
+
 TEST_F(TrajectoryFormatsTest, H5mdWritesAndReadsFrames)
 {
     if (!GMX_USE_HDF5)
