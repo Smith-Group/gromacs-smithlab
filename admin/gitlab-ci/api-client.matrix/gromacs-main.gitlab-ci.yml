@@ -9,6 +9,7 @@
 #   client code:
 #    * sample_restraint as bundled with GROMACS main
 #    * TAF extension example as bundled with GROMACS main
+#    * electric-field MDModules plugin from the mdrun tests of GROMACS main
 #   Scope: build, install, test
 # Test implementation choices (free to change as needed):
 #   GROMACS branch: merge request target branch
@@ -26,6 +27,18 @@ sample_taf:tmpi:
     CMAKE: /usr/local/cmake-3.29.8/bin/cmake
   needs:
     - job: gromacs:acpp-rocm:build
+
+sample_mdmodule_plugin:tmpi:
+  extends:
+    - .sample_mdmodule_plugin
+  rules:
+    - !reference [.rules:merge-requests, rules]
+  image: ${CI_REGISTRY}/gromacs/gromacs/ci-ubuntu-22.04-llvm-14-cuda-12.1.0-openmpi-5.0.3
+  variables:
+    CMAKE: /usr/local/cmake-3.29.8/bin/cmake
+  needs:
+    - job: gromacs:clang-14:build
+      artifacts: true
 
 sample_restraint:tmpi:
   extends:

@@ -16,6 +16,19 @@
     - export GMX_DOUBLE
     - bash -x admin/ci-scripts/build-taf-template.sh
 
+.sample_mdmodule_plugin:
+  stage: test
+  variables:
+    KUBERNETES_CPU_LIMIT: 1
+    KUBERNETES_CPU_REQUEST: 1
+    KUBERNETES_MEMORY_LIMIT: 1Gi
+    KUBERNETES_MEMORY_REQUEST: 1Gi
+  script:
+    - export GROMACS_DIR=$PWD/$INSTALL_DIR
+    - export GMX_SUFFIX
+    - export CMAKE
+    - bash -x admin/ci-scripts/build-mdmodule-plugin.sh
+
 # Consumers must set job.variables.COMPILER_MAJOR_VERSION!
 .sample_restraint:clang:
   extends:
