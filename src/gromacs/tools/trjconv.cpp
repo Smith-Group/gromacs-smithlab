@@ -51,6 +51,7 @@
 #include "gromacs/commandline/pargs.h"
 #include "gromacs/commandline/viewit.h"
 #include "gromacs/fileio/confio.h"
+#include "gromacs/fileio/fileformatregistry.h"
 #include "gromacs/fileio/filetypes.h"
 #include "gromacs/fileio/g96io.h"
 #include "gromacs/fileio/gmxfio.h"
@@ -258,6 +259,15 @@ static void copyTrxframeDeeply(const t_trxframe& input, t_trxframe* copy)
 }
 
 //! Swap the contents of \c a and \c b
+//! Returns whether trajectories of file type \p ftp hold velocities and can be opened in \p mode.
+static bool trajectoryHasVelocities(int ftp, FileMode mode)
+{
+    const FileFormatInfo* format = FileFormatRegistry::instance().byLegacyType(ftp);
+    return format != nullptr
+           && hasCapabilities(format->capabilities, FileCapability::Trajectory | FileCapability::Velocities)
+           && (mode == FileMode::Read ? format->canRead : format->canWrite);
+}
+
 static void swapFrames(t_trxframe* a, t_trxframe* b)
 {
     std::swap(a->not_ok, b->not_ok);
@@ -728,9 +738,8 @@ int gmx_trjconv(int argc, char* argv[])
         if (bVels)
         {
             /* check if velocities are possible in input and output files */
-            bVels = (ftp == efTRR || ftp == efGRO || ftp == efG96 || ftp == efTNG || ftp == efH5MD)
-                    && (ftpin == efTRR || ftpin == efGRO || ftpin == efG96 || ftpin == efTNG
-                        || ftpin == efH5MD || ftpin == efCPT);
+            bVels = trajectoryHasVelocities(ftp, FileMode::Write)
+                    && trajectoryHasVelocities(ftpin, FileMode::Read);
         }
         if (bSeparate || bSplit)
         {

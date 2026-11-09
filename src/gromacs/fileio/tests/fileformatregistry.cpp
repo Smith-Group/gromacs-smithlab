@@ -215,8 +215,7 @@ TEST(FileFormatRegistryTest, StructureFormatsMatchGenericTypes)
 
 TEST(FileFormatRegistryTest, VelocityFormatsMatchTrjconvTest)
 {
-    // The list in TrjconvFormatToFormatTest::outputFormatSupportsVelocities()
-    // in src/gromacs/tools/tests/trjconv.cpp.
+    // The formats that gmx trjconv writes velocities to.
     const std::set<int> trjconvList = { efGRO, efTRR, efH5MD, efTNG, efG96 };
     EXPECT_EQ(legacyTypesProviding(FileCapability::Trajectory | FileCapability::Velocities, FileMode::Write),
               trjconvList);

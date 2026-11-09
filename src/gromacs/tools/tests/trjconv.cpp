@@ -50,6 +50,7 @@
 
 #include <gtest/gtest.h>
 
+#include "gromacs/fileio/fileformatregistry.h"
 #include "gromacs/fileio/filetypes.h"
 #include "gromacs/fileio/h5md/binary_information.h"
 #include "gromacs/topology/index.h"
@@ -168,8 +169,8 @@ public:
     //! \brief Return true if the current parameter output format supports velocities.
     bool outputFormatSupportsVelocities() const
     {
-        return outputExt_ == efGRO || outputExt_ == efTRR || outputExt_ == efH5MD
-               || outputExt_ == efTNG || outputExt_ == efG96;
+        const FileFormatInfo* format = FileFormatRegistry::instance().byLegacyType(outputExt_);
+        return hasCapabilities(format->capabilities, FileCapability::Trajectory | FileCapability::Velocities);
     }
 
 private:
