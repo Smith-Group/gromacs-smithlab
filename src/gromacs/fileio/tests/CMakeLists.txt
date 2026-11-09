@@ -51,6 +51,7 @@ gmx_add_unit_test(FileIOTests fileio-test
         readinp.cpp
         structurefileformats.cpp
         ${tng_sources}
+        topfile.cpp
         trajectoryfileformats.cpp
         trxio.cpp
         xdr_serializer.cpp

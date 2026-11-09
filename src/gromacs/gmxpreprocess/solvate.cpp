@@ -50,6 +50,7 @@
 #include "gromacs/fileio/filetypes.h"
 #include "gromacs/fileio/oenv.h"
 #include "gromacs/fileio/pdbio.h"
+#include "gromacs/fileio/topfile.h"
 #include "gromacs/gmxlib/conformation_utilities.h"
 #include "gromacs/gmxpreprocess/makeexclusiondistances.h"
 #include "gromacs/math/units.h"
@@ -756,10 +757,7 @@ static void update_top(t_atoms*        atoms,
                        t_filenm        fnm[],
                        AtomProperties* aps)
 {
-    FILE *      fpin, *fpout;
-    char        buf[STRLEN * 2], buf2[STRLEN], *temp;
     const char* topinout;
-    bool        bSystem;
     double      mtot;
     real        vol, mm;
 
@@ -785,90 +783,49 @@ static void update_top(t_atoms*        atoms,
     topinout = ftp2fn(efTOP, NFILE, fnm);
     if (ftp2bSet(efTOP, NFILE, fnm))
     {
-        char temporary_filename[STRLEN];
-        std::strncpy(temporary_filename, "temp.topXXXXXX", STRLEN);
-
         fprintf(stderr, "Processing topology\n");
-        fpin    = gmx_ffopen(topinout, "r");
-        fpout   = gmx_fopen_temporary(temporary_filename);
-        bSystem = false;
-        while (std::fgets(buf, STRLEN, fpin))
-        {
-            std::strcpy(buf2, buf);
-            if ((temp = std::strchr(buf2, '\n')) != nullptr)
-            {
-                temp[0] = '\0';
-            }
-            ltrim(buf2);
-            if (buf2[0] == '[')
-            {
-                buf2[0] = ' ';
-                if ((temp = std::strchr(buf2, '\n')) != nullptr)
-                {
-                    temp[0] = '\0';
-                }
-                rtrim(buf2);
-                if (buf2[std::strlen(buf2) - 1] == ']')
-                {
-                    buf2[std::strlen(buf2) - 1] = '\0';
-                    ltrim(buf2);
-                    rtrim(buf2);
-                    bSystem = (gmx_strcasecmp(buf2, "system") == 0);
-                }
-            }
-            else if (bSystem && nsol && (buf[0] != ';'))
-            {
-                /* if sol present, append "in water" to system name */
-                rtrim(buf2);
-                if (buf2[0] && (!std::strstr(buf2, " water")))
-                {
-                    sprintf(buf, "%s in water\n", buf2);
-                    bSystem = false;
-                }
-            }
-            fprintf(fpout, "%s", buf);
-        }
-        gmx_ffclose(fpin);
-
-        // Add new solvent molecules to the topology
+        gmx::TopFile topology(topinout);
+        topology.read();
         if (nsol > 0)
         {
+            // If solvent is present, append "in water" to the system name
+            const std::string systemName = topology.getSystemName();
+            if (!systemName.empty() && systemName.find(" water") == std::string::npos)
+            {
+                topology.setSystemName(systemName + " in water");
+            }
+
+            // Add a line for each run of solvent molecules with the same residue name
             std::string currRes  = *atoms->resinfo[firstSolventResidueIndex].name;
             int         resCount = 0;
-
-            // Iterate through solvent molecules and increment a count until new resname found
             for (int i = firstSolventResidueIndex; i < atoms->nres; i++)
             {
-                if ((currRes == *atoms->resinfo[i].name))
+                if (currRes == *atoms->resinfo[i].name)
                 {
                     resCount += 1;
                 }
                 else
                 {
-                    // Change topology and restart count
                     fprintf(stdout,
                             "Adding line for %d solvent molecules with resname (%s) to "
                             "topology file (%s)\n",
                             resCount,
                             currRes.c_str(),
                             topinout);
-                    fprintf(fpout, "%-15s %5d\n", currRes.c_str(), resCount);
+                    topology.addMolecules(currRes, resCount);
                     currRes  = *atoms->resinfo[i].name;
                     resCount = 1;
                 }
             }
-            // One more print needed for last residue type
             fprintf(stdout,
                     "Adding line for %d solvent molecules with resname (%s) to "
                     "topology file (%s)\n",
                     resCount,
                     currRes.c_str(),
                     topinout);
-            fprintf(fpout, "%-15s %5d\n", currRes.c_str(), resCount);
+            topology.addMolecules(currRes, resCount);
         }
-        gmx_ffclose(fpout);
-        make_backup(topinout);
-        gmx_file_rename(temporary_filename, topinout);
+        topology.write();
     }
 }
 

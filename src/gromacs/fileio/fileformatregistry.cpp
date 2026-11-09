@@ -49,6 +49,7 @@
 #include "gromacs/fileio/boxcontainingfile.h"
 #include "gromacs/fileio/filetypes.h"
 #include "gromacs/fileio/structurefile.h"
+#include "gromacs/fileio/topfile.h"
 #include "gromacs/fileio/topologyfile.h"
 #include "gromacs/fileio/trajectoryfile.h"
 #include "gromacs/utility/cstringutil.h"
@@ -132,7 +133,7 @@ const LegacyFormat c_legacyFormats[] = {
       FileCapability::Structure | FileCapability::Box | FileCapability::Topology | FileCapability::Velocities,
       true,
       false },
-    { efTOP, FileCapability::Topology, true, true },
+    { efTOP, FileCapability::Topology, true, true, createTopFile },
 };
 
 //! Returns the name of \p mode for messages.

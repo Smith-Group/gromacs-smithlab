@@ -46,6 +46,7 @@
 #include <iterator>
 #include <numeric>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "gromacs/commandline/filenm.h"
@@ -53,6 +54,7 @@
 #include "gromacs/fileio/confio.h"
 #include "gromacs/fileio/filetypes.h"
 #include "gromacs/fileio/oenv.h"
+#include "gromacs/fileio/topfile.h"
 #include "gromacs/math/units.h"
 #include "gromacs/mdlib/force.h"
 #include "gromacs/pbcutil/pbc.h"
@@ -300,122 +302,20 @@ static void sort_ions(int                 nsa,
 
 static void update_topol(const char* topinout, int p_num, int n_num, const char* p_name, const char* n_name, char* grpname)
 {
-    FILE *   fpin, *fpout;
-    char     buf[STRLEN], buf2[STRLEN], *temp, **mol_line = nullptr;
-    int      i, nmol_line, sol_line, nsol_last;
-    gmx_bool bMolecules;
-    char     temporary_filename[STRLEN];
-
     printf("\nProcessing topology\n");
-    fpin = gmx_ffopen(topinout, "r");
-    std::strncpy(temporary_filename, "temp.topXXXXXX", STRLEN);
-    fpout = gmx_fopen_temporary(temporary_filename);
-
-    bMolecules = FALSE;
-    nmol_line  = 0;
-    sol_line   = -1;
-    nsol_last  = -1;
-    while (std::fgets(buf, STRLEN, fpin))
-    {
-        std::strcpy(buf2, buf);
-        if ((temp = std::strchr(buf2, '\n')) != nullptr)
-        {
-            temp[0] = '\0';
-        }
-        ltrim(buf2);
-        if (buf2[0] == '[')
-        {
-            buf2[0] = ' ';
-            if ((temp = std::strchr(buf2, '\n')) != nullptr)
-            {
-                temp[0] = '\0';
-            }
-            rtrim(buf2);
-            if (buf2[std::strlen(buf2) - 1] == ']')
-            {
-                buf2[std::strlen(buf2) - 1] = '\0';
-                ltrim(buf2);
-                rtrim(buf2);
-                bMolecules = (gmx_strcasecmp(buf2, "molecules") == 0);
-            }
-            fprintf(fpout, "%s", buf);
-        }
-        else if (!bMolecules)
-        {
-            fprintf(fpout, "%s", buf);
-        }
-        else
-        {
-            /* Check if this is a line with solvent molecules */
-            sscanf(buf, "%s", buf2);
-            if (gmx_strcasecmp(buf2, grpname) == 0)
-            {
-                sol_line = nmol_line;
-                sscanf(buf, "%*s %d", &nsol_last);
-            }
-            /* Store this molecules section line */
-            srenew(mol_line, nmol_line + 1);
-            mol_line[nmol_line] = gmx_strdup(buf);
-            nmol_line++;
-        }
-    }
-    gmx_ffclose(fpin);
-
-    if (sol_line == -1)
-    {
-        gmx_ffclose(fpout);
-        gmx_fatal(FARGS,
-                  "No line with moleculetype '%s' found the [ molecules ] section of file '%s'",
-                  grpname,
-                  topinout);
-    }
-    if (nsol_last < p_num + n_num)
-    {
-        gmx_ffclose(fpout);
-        gmx_fatal(FARGS,
-                  "The last entry for moleculetype '%s' in the [ molecules ] section of file '%s' "
-                  "has less solvent molecules (%d) than were replaced (%d)",
-                  grpname,
-                  topinout,
-                  nsol_last,
-                  p_num + n_num);
-    }
-
-    /* Print all the molecule entries */
-    for (i = 0; i < nmol_line; i++)
-    {
-        if (i != sol_line)
-        {
-            fprintf(fpout, "%s", mol_line[i]);
-        }
-        else
-        {
-            printf("Replacing %d solute molecules in topology file (%s) "
-                   " by %d %s and %d %s ions.\n",
-                   p_num + n_num,
-                   topinout,
-                   p_num,
-                   p_name,
-                   n_num,
-                   n_name);
-            nsol_last -= p_num + n_num;
-            if (nsol_last > 0)
-            {
-                fprintf(fpout, "%-10s  %d\n", grpname, nsol_last);
-            }
-            if (p_num > 0)
-            {
-                fprintf(fpout, "%-15s  %d\n", p_name, p_num);
-            }
-            if (n_num > 0)
-            {
-                fprintf(fpout, "%-15s  %d\n", n_name, n_num);
-            }
-        }
-    }
-    gmx_ffclose(fpout);
-    make_backup(topinout);
-    gmx_file_rename(temporary_filename, topinout);
+    gmx::TopFile topology(topinout);
+    topology.read();
+    const std::pair<std::string, int> ions[] = { { p_name, p_num }, { n_name, n_num } };
+    topology.replaceMolecules(grpname, p_num + n_num, ions);
+    printf("Replacing %d solute molecules in topology file (%s) "
+           " by %d %s and %d %s ions.\n",
+           p_num + n_num,
+           topinout,
+           p_num,
+           p_name,
+           n_num,
+           n_name);
+    topology.write();
 }
 
 /*! \brief Return all atom indices that do not belong to an index group.

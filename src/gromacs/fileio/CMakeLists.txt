@@ -58,6 +58,7 @@ set(FILEIO_SOURCES
     readinp.cpp
     structurefileformats.cpp
     tngio.cpp
+    topfile.cpp
     tpxio.cpp
     trajectoryfileformats.cpp
     trrio.cpp
