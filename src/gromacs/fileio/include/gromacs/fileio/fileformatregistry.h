@@ -47,8 +47,9 @@
  * before any I/O is done.
  *
  * Every format that GROMACS reads and writes is registered. The structure
- * formats of confio.h have file objects; the others are descriptions without
- * a factory until they move to file objects.
+ * formats of confio.h and the trajectory formats of trxio.h have file
+ * objects; the others are descriptions without a factory until they move to
+ * file objects.
  * A format defined outside this module registers itself from its own
  * translation unit with a FileFormatRegistrar.
  *

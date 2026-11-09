@@ -197,7 +197,7 @@ public:
         return time;
     }
 
-    void writeFrame(const t_trxframe& frame, ArrayRef<const int> index) override
+    void writeFrame(const t_trxframe& frame, ArrayRef<const int> index, gmx_conect_t* /*connections*/) override
     {
         if (!frame.bX)
         {
@@ -282,7 +282,7 @@ public:
         return true;
     }
 
-    void writeFrame(const t_trxframe& frame, ArrayRef<const int> index) override
+    void writeFrame(const t_trxframe& frame, ArrayRef<const int> index, gmx_conect_t* /*connections*/) override
     {
         if (index.empty())
         {
@@ -354,7 +354,9 @@ public:
         return gmx_tng_get_time_of_final_frame(tng_);
     }
     gmx_tng_trajectory* legacyTng() const override { return tng_; }
-    [[noreturn]] void writeFrame(const t_trxframe& /*frame*/, ArrayRef<const int> /*index*/) override
+    [[noreturn]] void   writeFrame(const t_trxframe& /*frame*/,
+                                   ArrayRef<const int> /*index*/,
+                                   gmx_conect_t* /*connections*/) override
     {
         GMX_THROW(NotImplementedError(
                 "TNG files are written through trjtools_gmx_prepare_tng_writing()"));
@@ -396,7 +398,7 @@ public:
         return haveFrame;
     }
 
-    void writeFrame(const t_trxframe& frame, ArrayRef<const int> index) override
+    void writeFrame(const t_trxframe& frame, ArrayRef<const int> index, gmx_conect_t* /*connections*/) override
     {
         const int numAtoms = index.empty() ? frame.natoms : index.ssize();
         if (!isSetUp_)

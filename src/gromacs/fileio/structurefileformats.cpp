@@ -34,7 +34,8 @@
 /*! \internal \file
  * \brief
  * Defines the file objects of the structure formats that confio.h reads
- * and writes.
+ * and writes. GRO, G96, PDB and mmCIF files also hold the frames that
+ * trxio.h reads and writes.
  *
  * Each format reads and writes with the existing functions of groio.h,
  * g96io.h, pdbio.h, cifio.h and espio.h, so its files are the same as before.
@@ -46,7 +47,9 @@
 
 #include "structurefileformats.h"
 
+#include <cinttypes>
 #include <cstdio>
+#include <cstring>
 
 #include <deque>
 #include <memory>
@@ -66,6 +69,7 @@
 #include "gromacs/fileio/pdbio.h"
 #include "gromacs/fileio/structurefile.h"
 #include "gromacs/fileio/topologyfile.h"
+#include "gromacs/fileio/trajectoryfile.h"
 #include "gromacs/fileio/trxio.h"
 #include "gromacs/mdtypes/md_enums.h"
 #include "gromacs/topology/atoms.h"
@@ -313,11 +317,84 @@ public:
     int getActiveModel() const override { return activeModel_; }
 };
 
-//! A GRO file. Several models are written one after the other.
-class GroFile : public BuiltinMultimodelStructureFile
+/*! \brief
+ * A built-in structure format whose files can also hold a sequence of frames.
+ *
+ * read() and write() handle the structure. The frames go through a stream
+ * of their own, opened with openForReadingFrames() or
+ * openForWritingFrames(). In append mode, frames are added to the end of
+ * the file, and write() still replaces it.
+ *
+ * \tparam Base  The structure file class of the format.
+ */
+template<class Base>
+class BuiltinTrajectoryStructureFile : public Base, public TrajectoryFile
 {
 public:
-    using BuiltinMultimodelStructureFile::BuiltinMultimodelStructureFile;
+    BuiltinTrajectoryStructureFile(std::filesystem::path path, FileMode mode) :
+        Base(std::move(path)), mode_(mode)
+    {
+    }
+    ~BuiltinTrajectoryStructureFile() override
+    {
+        if (frames_ != nullptr)
+        {
+            gmx_fio_close(frames_);
+        }
+    }
+
+    void openForReadingFrames() override { frames_ = gmx_fio_open(this->path_, "r"); }
+    void openForWritingFrames() override
+    {
+        frames_ = gmx_fio_open(this->path_, mode_ == FileMode::Append ? "a" : "w");
+    }
+    bool      supportsMode(FileMode /*mode*/) const override { return true; }
+    t_fileio* legacyFileio() const override { return frames_; }
+
+protected:
+    //! The stream of frames.
+    FILE* frameStream() const { return gmx_fio_getfp(frames_); }
+    //! Opens the stream of frames again at the start of the file.
+    void reopenFramesForReading()
+    {
+        gmx_fio_close(frames_);
+        frames_ = gmx_fio_open(this->path_, "r");
+    }
+    //! Throws unless \p frame has positions, and particle names if \p needNames.
+    void requireToWrite(const t_trxframe& frame, bool needNames) const
+    {
+        if (!frame.bX)
+        {
+            GMX_THROW(InvalidInputError(
+                    formatString("Need coordinates to write a %s trajectory", this->formatName())));
+        }
+        if (needNames && !frame.bAtoms)
+        {
+            GMX_THROW(InvalidInputError(
+                    formatString("Can not write a %s file without atom names", this->formatName())));
+        }
+    }
+    //! The title that a frame is written with.
+    static std::string frameTitle(const t_trxframe& frame)
+    {
+        return formatString("frame t= %.3f", frame.time);
+    }
+
+    //! The number of frames read or written.
+    int numFrames_ = 0;
+
+private:
+    //! Whether frames replace the file or are added to it.
+    FileMode mode_;
+    //! The stream of frames, or nullptr before it is opened.
+    t_fileio* frames_ = nullptr;
+};
+
+//! A GRO file. Several models or frames are written one after the other.
+class GroFile : public BuiltinTrajectoryStructureFile<BuiltinMultimodelStructureFile>
+{
+public:
+    using BuiltinTrajectoryStructureFile::BuiltinTrajectoryStructureFile;
 
     void read() override
     {
@@ -354,18 +431,42 @@ public:
         }
         gmx_fio_fclose(out);
     }
-    bool supportsMode(FileMode mode) const override
-    {
-        return mode == FileMode::Read || mode == FileMode::Write;
-    }
     const char* formatName() const override { return "GRO"; }
+
+    bool readNextFrame(t_trxframe* frame, int /*flags*/) override
+    {
+        const bool isFirst = (numFrames_++ == 0);
+        return isFirst ? gro_first_x_or_v(frameStream(), frame) > 0
+                       : gro_next_x_or_v(frameStream(), frame);
+    }
+    void writeFrame(const t_trxframe& frame, ArrayRef<const int> index, gmx_conect_t* /*connections*/) override
+    {
+        requireToWrite(frame, true);
+        const std::string title      = frameTitle(frame);
+        const rvec*       velocities = frame.bV ? frame.v : nullptr;
+        if (index.empty())
+        {
+            write_hconf_p(frameStream(), title.c_str(), frame.atoms, frame.x, velocities, frame.box);
+        }
+        else
+        {
+            write_hconf_indexed_p(frameStream(),
+                                  title.c_str(),
+                                  frame.atoms,
+                                  index.ssize(),
+                                  index.data(),
+                                  frame.x,
+                                  velocities,
+                                  frame.box);
+        }
+    }
 };
 
 //! A G96 file.
-class G96File : public BuiltinStructureFile<StructureFile>
+class G96File : public BuiltinTrajectoryStructureFile<BuiltinStructureFile<StructureFile>>
 {
 public:
-    using BuiltinStructureFile::BuiltinStructureFile;
+    using BuiltinTrajectoryStructureFile::BuiltinTrajectoryStructureFile;
 
     void read() override
     {
@@ -421,11 +522,47 @@ public:
                        haveSelection() ? particles.data() : nullptr);
         gmx_fio_fclose(out);
     }
-    bool supportsMode(FileMode mode) const override
-    {
-        return mode == FileMode::Read || mode == FileMode::Write;
-    }
     const char* formatName() const override { return "G96"; }
+
+    bool readNextFrame(t_trxframe* frame, int flags) override
+    {
+        if (numFrames_ == 0)
+        {
+            // Count the particles first; a compressed file cannot be
+            // rewound, so it is opened again.
+            persistentLine_.resize(STRLEN + 1);
+            read_g96_conf(frameStream(), path_, nullptr, frame, nullptr, persistentLine_.data());
+            reopenFramesForReading();
+            clear_trxframe(frame, FALSE);
+            if ((flags & (TRX_READ_X | TRX_NEED_X)) != 0)
+            {
+                snew(frame->x, frame->natoms);
+            }
+            if ((flags & (TRX_READ_V | TRX_NEED_V)) != 0)
+            {
+                snew(frame->v, frame->natoms);
+            }
+        }
+        numFrames_++;
+        read_g96_conf(frameStream(), {}, nullptr, frame, nullptr, persistentLine_.data());
+        return frame->natoms > 0;
+    }
+    void writeFrame(const t_trxframe& frame, ArrayRef<const int> index, gmx_conect_t* /*connections*/) override
+    {
+        requireToWrite(frame, false);
+        // write_trxframe() wrote G96 frames without a title, and
+        // write_trxframe_indexed() with one.
+        const std::string title = index.empty() ? std::string() : frameTitle(frame);
+        write_g96_conf(frameStream(),
+                       title.c_str(),
+                       &frame,
+                       index.empty() ? -1 : index.ssize(),
+                       index.empty() ? nullptr : index.data());
+    }
+
+private:
+    //! The line that the G96 reader keeps between frames.
+    std::vector<char> persistentLine_;
 };
 
 /*! \brief
@@ -434,10 +571,10 @@ public:
  * Several models are written with MODEL records. CONECT records are not
  * read yet, so the file reports no topology.
  */
-class PdbFile : public BuiltinMultimodelStructureFile, public TopologyFile
+class PdbFile : public BuiltinTrajectoryStructureFile<BuiltinMultimodelStructureFile>, public TopologyFile
 {
 public:
-    using BuiltinMultimodelStructureFile::BuiltinMultimodelStructureFile;
+    using BuiltinTrajectoryStructureFile::BuiltinTrajectoryStructureFile;
 
     void read() override
     {
@@ -453,16 +590,108 @@ public:
                 path_, symtabForReading(), &title, atomsForReading(), positionsForReading(), &pbcType, box);
         finishReading(title, false, box, pbcType);
     }
-    void write() override { writePdbModels(false); }
-    bool supportsMode(FileMode mode) const override
-    {
-        return mode == FileMode::Read || mode == FileMode::Write;
-    }
+    void        write() override { writePdbModels(false); }
     const char* formatName() const override { return "PDB"; }
+
+    bool readNextFrame(t_trxframe* frame, int /*flags*/) override
+    {
+        if (numFrames_ == 0)
+        {
+            fprintf(stderr, "Reading frames from pdb file");
+            get_pdb_coordnum(frameStream(), &frame->natoms);
+            if (frame->natoms == 0)
+            {
+                GMX_THROW(InvalidInputError("No coordinates in pdb file"));
+            }
+            frewind(frameStream());
+            snew(frame->x, frame->natoms);
+        }
+        return readFrame(frame);
+    }
+    void writeFrame(const t_trxframe& frame, ArrayRef<const int> index, gmx_conect_t* connections) override
+    {
+        requireToWrite(frame, true);
+        const std::string title   = frameTitle(frame);
+        const PbcType     pbcType = frame.bPBC ? frame.pbcType : PbcType::Unset;
+        if (index.empty())
+        {
+            write_pdbfile(
+                    frameStream(), title.c_str(), frame.atoms, frame.x, pbcType, frame.box, ' ', frame.step, connections);
+        }
+        else
+        {
+            write_pdbfile_indexed(frameStream(),
+                                  title.c_str(),
+                                  frame.atoms,
+                                  frame.x,
+                                  pbcType,
+                                  frame.box,
+                                  ' ',
+                                  frame.step,
+                                  index.ssize(),
+                                  index.data(),
+                                  connections,
+                                  false);
+        }
+    }
 
     TopologyCompleteness     getCompleteness() const override { return TopologyCompleteness::None; }
     std::vector<std::string> getMoleculeTypes() const override { return {}; }
     int getNumMolecules(const std::string& /*moleculeTypeName*/) const override { return 0; }
+
+private:
+    //! Reads the next model of \p frame->natoms particles into \p frame.
+    bool readFrame(t_trxframe* frame)
+    {
+        t_atoms atoms;
+        atoms.nr      = frame->natoms;
+        atoms.atom    = nullptr;
+        atoms.pdbinfo = nullptr;
+        t_symtab symtab;
+        open_symtab(&symtab);
+        // A model number of -1 rather than NOTSET saves checking whether one was read.
+        int       modelNumber = -1;
+        char      title[STRLEN];
+        PbcType   pbcType;
+        matrix    box;
+        const int numAtoms = read_pdbfile(
+                frameStream(), title, &modelNumber, &atoms, &symtab, frame->x, &pbcType, box, nullptr);
+        free_symtab(&symtab);
+        setTrxFramePbcType(frame, pbcType);
+        if (numFrames_ == 0)
+        {
+            fprintf(stderr, " '%s', %d atoms\n", title, frame->natoms);
+        }
+        frame->bPrec = TRUE;
+        frame->prec  = 10000;
+        frame->bX    = TRUE;
+        frame->bBox  = (box[XX][XX] != 0.0);
+        if (frame->bBox)
+        {
+            copy_mat(box, frame->box);
+        }
+
+        frame->step          = 0;
+        const char* stepText = std::strstr(title, " step= ");
+        frame->bStep = ((stepText != nullptr) && sscanf(stepText + 7, "%" SCNd64, &frame->step) == 1);
+        double      time     = 0.0;
+        const char* timeText = std::strstr(title, " t= ");
+        frame->bTime         = ((timeText != nullptr) && sscanf(timeText + 4, "%lf", &time) == 1);
+        frame->timeIsDouble  = true;
+        frame->time          = time;
+
+        if (numAtoms == 0)
+        {
+            return false;
+        }
+        if (numAtoms != frame->natoms)
+        {
+            GMX_THROW(InvalidInputError(formatString(
+                    "Number of atoms in pdb frame %d is %d instead of %d", numFrames_, numAtoms, frame->natoms)));
+        }
+        numFrames_++;
+        return true;
+    }
 };
 
 /*! \brief
@@ -471,10 +700,10 @@ public:
  * Several models are written with their model numbers. struct_conn records
  * are not read yet, so the file reports no topology.
  */
-class CifFile : public BuiltinMultimodelStructureFile, public TopologyFile
+class CifFile : public BuiltinTrajectoryStructureFile<BuiltinMultimodelStructureFile>, public TopologyFile
 {
 public:
-    using BuiltinMultimodelStructureFile::BuiltinMultimodelStructureFile;
+    using BuiltinTrajectoryStructureFile::BuiltinTrajectoryStructureFile;
 
     void read() override
     {
@@ -519,15 +748,63 @@ public:
         }
         gmx_fio_fclose(out);
     }
-    bool supportsMode(FileMode mode) const override
-    {
-        return mode == FileMode::Read || mode == FileMode::Write;
-    }
     const char* formatName() const override { return "mmCIF"; }
+
+    void openForReadingFrames() override
+    {
+        BuiltinTrajectoryStructureFile::openForReadingFrames();
+        // The models come from the whole parsed file, one per frame.
+        fprintf(stderr, "Reading frames from cif file");
+        cifModels_ = CifIO::openTrajectory(path_);
+    }
+    bool readNextFrame(t_trxframe* frame, int /*flags*/) override
+    {
+        if (cifModels_ == nullptr)
+        {
+            frame->natoms = 0;
+            return false;
+        }
+        if (numFrames_++ == 0)
+        {
+            frame->natoms = cifModels_->numAtoms();
+            if (frame->natoms == 0)
+            {
+                GMX_THROW(InvalidInputError("No coordinates in cif file"));
+            }
+            snew(frame->x, frame->natoms);
+        }
+        return cifModels_->readNextFrame(frame);
+    }
+    void writeFrame(const t_trxframe& frame, ArrayRef<const int> index, gmx_conect_t* connections) override
+    {
+        requireToWrite(frame, true);
+        std::vector<int> all;
+        if (index.empty())
+        {
+            all.resize(frame.natoms);
+            std::iota(all.begin(), all.end(), 0);
+            index = all;
+        }
+        CifIO::writeTrajectoryFrame(frameStream(),
+                                    nullptr,
+                                    frame.atoms,
+                                    frame.x,
+                                    frame.box,
+                                    index.ssize(),
+                                    index.data(),
+                                    numFrames_ + 1,
+                                    numFrames_ == 0,
+                                    connections);
+        numFrames_++;
+    }
 
     TopologyCompleteness     getCompleteness() const override { return TopologyCompleteness::None; }
     std::vector<std::string> getMoleculeTypes() const override { return {}; }
     int getNumMolecules(const std::string& /*moleculeTypeName*/) const override { return 0; }
+
+private:
+    //! The parsed models being read, or nullptr if the file has none.
+    std::unique_ptr<CifTrajectory> cifModels_;
 };
 
 //! An Espresso file.
@@ -591,24 +868,24 @@ public:
 
 } // namespace
 
-FilePointer createGroFile(const std::filesystem::path& path, FileMode /*mode*/)
+FilePointer createGroFile(const std::filesystem::path& path, FileMode mode)
 {
-    return std::make_unique<GroFile>(path);
+    return std::make_unique<GroFile>(path, mode);
 }
 
-FilePointer createG96File(const std::filesystem::path& path, FileMode /*mode*/)
+FilePointer createG96File(const std::filesystem::path& path, FileMode mode)
 {
-    return std::make_unique<G96File>(path);
+    return std::make_unique<G96File>(path, mode);
 }
 
-FilePointer createPdbFile(const std::filesystem::path& path, FileMode /*mode*/)
+FilePointer createPdbFile(const std::filesystem::path& path, FileMode mode)
 {
-    return std::make_unique<PdbFile>(path);
+    return std::make_unique<PdbFile>(path, mode);
 }
 
-FilePointer createCifFile(const std::filesystem::path& path, FileMode /*mode*/)
+FilePointer createCifFile(const std::filesystem::path& path, FileMode mode)
 {
-    return std::make_unique<CifFile>(path);
+    return std::make_unique<CifFile>(path, mode);
 }
 
 FilePointer createEspFile(const std::filesystem::path& path, FileMode /*mode*/)

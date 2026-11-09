@@ -48,6 +48,7 @@
 #include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/real.h"
 
+struct gmx_conect_t;
 struct gmx_tng_trajectory;
 struct t_fileio;
 struct t_trxframe;
@@ -60,8 +61,9 @@ class H5md;
 /*! \libinternal \brief
  * A file that carries a sequence of frames.
  *
- * read() and write() open the file; the frames are then read one at a
- * time with readNextFrame() or written with writeFrame(). The frame is
+ * openForReadingFrames() and openForWritingFrames() open the file; the
+ * frames are then read one at a time with readNextFrame() or written with
+ * writeFrame(). The frame is
  * a t_trxframe until gmx::TrajectoryFrame owns its data.
  */
 class TrajectoryFile : public virtual File
@@ -71,6 +73,21 @@ public:
     static constexpr FileCapability sc_capability = FileCapability::Trajectory;
 
     ~TrajectoryFile() override;
+
+    /*! \brief
+     * Opens the file to read frames.
+     *
+     * This is read(), except for a format that also holds a structure:
+     * there read() reads the structure.
+     */
+    virtual void openForReadingFrames() { read(); }
+    /*! \brief
+     * Opens the file to write frames.
+     *
+     * This is write(), except for a format that also holds a structure:
+     * there write() writes the structure.
+     */
+    virtual void openForWritingFrames() { write(); }
 
     /*! \brief
      * Reads the next frame into \p frame.
@@ -100,11 +117,13 @@ public:
     /*! \brief
      * Writes \p frame.
      *
-     * \param[in] frame  The frame to write.
-     * \param[in] index  The particles to write, in that order; all when empty.
+     * \param[in] frame        The frame to write.
+     * \param[in] index        The particles to write, in that order; all when empty.
+     * \param[in] connections  The bonds that PDB and mmCIF write as CONECT
+     *                         records, or nullptr; other formats ignore it.
      * \throws InvalidInputError if \p frame lacks what the format needs.
      */
-    virtual void writeFrame(const t_trxframe& frame, ArrayRef<const int> index) = 0;
+    virtual void writeFrame(const t_trxframe& frame, ArrayRef<const int> index, gmx_conect_t* connections) = 0;
 
     /*! \brief
      * Returns the t_fileio of the open file, or nullptr if the format

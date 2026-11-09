@@ -50,6 +50,7 @@
 #include "gromacs/fileio/filetypes.h"
 #include "gromacs/fileio/structurefile.h"
 #include "gromacs/fileio/topologyfile.h"
+#include "gromacs/fileio/trajectoryfile.h"
 #include "gromacs/utility/cstringutil.h"
 #include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/stringutil.h"
@@ -114,12 +115,14 @@ const LegacyFormat c_legacyFormats[] = {
       true,
       createCifFile },
     { efBRK,
-      FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box | FileCapability::Topology,
+      FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box
+              | FileCapability::Topology | FileCapability::Trajectory,
       true,
       true,
       createPdbFile },
     { efENT,
-      FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box | FileCapability::Topology,
+      FileCapability::Structure | FileCapability::Multimodel | FileCapability::Box
+              | FileCapability::Topology | FileCapability::Trajectory,
       true,
       true,
       createPdbFile },
@@ -154,6 +157,8 @@ bool implementsInterface(const File& file, FileCapability capability)
             return dynamic_cast<const MultimodelStructureFile*>(&file) != nullptr;
         case FileCapability::Box: return dynamic_cast<const BoxContainingFile*>(&file) != nullptr;
         case FileCapability::Topology: return dynamic_cast<const TopologyFile*>(&file) != nullptr;
+        case FileCapability::Trajectory:
+            return dynamic_cast<const TrajectoryFile*>(&file) != nullptr;
         default: GMX_THROW(InternalError("Capability has no interface"));
     }
 }
@@ -161,8 +166,11 @@ bool implementsInterface(const File& file, FileCapability capability)
 //! Throws InternalError unless \p file implements exactly the interfaces that \p format declares.
 void checkInterfacesMatch(const File& file, const FileFormatInfo& format)
 {
-    for (const FileCapability capability :
-         { FileCapability::Structure, FileCapability::Multimodel, FileCapability::Box, FileCapability::Topology })
+    for (const FileCapability capability : { FileCapability::Structure,
+                                             FileCapability::Multimodel,
+                                             FileCapability::Box,
+                                             FileCapability::Topology,
+                                             FileCapability::Trajectory })
     {
         const bool declared    = hasCapabilities(format.capabilities, capability);
         const bool implemented = implementsInterface(file, capability);

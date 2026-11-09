@@ -193,8 +193,14 @@ std::set<int> genericTypeMembers(int genericType)
 
 TEST(FileFormatRegistryTest, TrajectoryFormatsMatchGenericTypes)
 {
-    EXPECT_EQ(legacyTypesProviding(FileCapability::Trajectory, FileMode::Read), genericTypeMembers(efTRX));
-    EXPECT_EQ(legacyTypesProviding(FileCapability::Trajectory, FileMode::Write), genericTypeMembers(efTRO));
+    // BRK and ENT files are PDB files, so trxio.h reads and writes their
+    // frames, but efTRX and efTRO do not offer them.
+    std::set<int> readable = genericTypeMembers(efTRX);
+    readable.insert({ efBRK, efENT });
+    EXPECT_EQ(legacyTypesProviding(FileCapability::Trajectory, FileMode::Read), readable);
+    std::set<int> writable = genericTypeMembers(efTRO);
+    writable.insert({ efBRK, efENT });
+    EXPECT_EQ(legacyTypesProviding(FileCapability::Trajectory, FileMode::Write), writable);
 }
 
 TEST(FileFormatRegistryTest, StructureFormatsMatchGenericTypes)

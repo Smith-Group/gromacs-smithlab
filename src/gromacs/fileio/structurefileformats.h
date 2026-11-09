@@ -34,7 +34,8 @@
 /*! \internal \file
  * \brief
  * Declares the file objects of the structure formats that confio.h reads
- * and writes.
+ * and writes. GRO, G96, PDB and mmCIF files also hold the frames that
+ * trxio.h reads and writes.
  *
  * \author Amr Alhossary <amr_alhossary@hotmail.com>
  * \ingroup module_fileio

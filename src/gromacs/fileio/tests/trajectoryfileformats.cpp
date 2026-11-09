@@ -59,6 +59,8 @@
 #include "gromacs/fileio/trrio.h"
 #include "gromacs/fileio/trxio.h"
 #include "gromacs/fileio/xtcio.h"
+#include "gromacs/topology/atoms.h"
+#include "gromacs/topology/symtab.h"
 #include "gromacs/trajectory/trajectoryframe.h"
 #include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/smalloc.h"
@@ -253,7 +255,7 @@ TEST_F(TrajectoryFormatsTest, XtcRefusesAFrameWithoutPositions)
     file->write();
     setFrame(0);
     frame_.bX = false;
-    EXPECT_THROW_GMX(file->writeFrame(frame_, {}), InvalidInputError);
+    EXPECT_THROW_GMX(file->writeFrame(frame_, {}, nullptr), InvalidInputError);
 }
 
 TEST_F(TrajectoryFormatsTest, XtcKnowsTheTimeOfItsFinalFrame)
@@ -324,6 +326,59 @@ TEST_F(TrajectoryFormatsTest, H5mdGivesTheH5mdWriterItsOpenFile)
     file->read();
     EXPECT_NE(file->legacyH5md(), nullptr);
     EXPECT_EQ(file->legacyTng(), nullptr);
+}
+
+TEST_F(TrajectoryFormatsTest, StructureFormatsAreTrajectoryFiles)
+{
+    for (const char* name :
+         { "frames.gro", "frames.g96", "frames.pdb", "frames.brk", "frames.ent", "frames.cif" })
+    {
+        SCOPED_TRACE(name);
+        EXPECT_NE(openFileAs<TrajectoryFile>(fileManager_.getTemporaryFilePath(name), FileMode::Write),
+                  nullptr);
+    }
+}
+
+TEST_F(TrajectoryFormatsTest, GroAppendsFrames)
+{
+    t_symtab symtab;
+    open_symtab(&symtab);
+    t_atoms atoms;
+    init_t_atoms(&atoms, c_numAtoms, false);
+    atoms.nres            = 1;
+    atoms.resinfo[0].name = put_symtab(&symtab, "SOL");
+    atoms.resinfo[0].nr   = 1;
+    for (int i = 0; i < c_numAtoms; i++)
+    {
+        atoms.atomname[i]    = put_symtab(&symtab, "OW");
+        atoms.atom[i].resind = 0;
+    }
+    frame_.bAtoms = true;
+    frame_.atoms  = &atoms;
+
+    const std::filesystem::path path = fileManager_.getTemporaryFilePath("frames.gro");
+    for (const char* mode : { "w", "a" })
+    {
+        t_trxstatus* status = open_trx(path, mode);
+        setFrame(mode[0] == 'w' ? 0 : 1);
+        write_trxframe(status, &frame_, nullptr);
+        close_trx(status);
+    }
+
+    gmx_output_env_t* oenv;
+    output_env_init_default(&oenv);
+    t_trxstatus* status;
+    t_trxframe   frame;
+    ASSERT_TRUE(read_first_frame(oenv, &status, path, &frame, nullptr, TRX_NEED_X));
+    EXPECT_REAL_EQ(frame.x[1][XX], 1.0F);
+    ASSERT_TRUE(read_next_frame(oenv, status, &frame));
+    EXPECT_REAL_EQ(frame.x[1][XX], 2.0F);
+    EXPECT_FALSE(read_next_frame(oenv, status, &frame));
+    close_trx(status);
+    done_frame(&frame);
+    output_env_done(oenv);
+    done_atom(&atoms);
+    done_symtab(&symtab);
 }
 
 TEST_F(TrajectoryFormatsTest, H5mdWritesAndReadsFrames)
