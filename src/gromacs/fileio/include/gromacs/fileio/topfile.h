@@ -58,8 +58,8 @@ namespace gmx
  *
  * read() keeps the lines of the file; write() writes them back and keeps
  * a backup of the old file. In between, the [ molecules ] and [ system ]
- * sections can be changed. The rest of the file, including #include and
- * #define lines, is kept as it is: grompp interprets it.
+ * sections can be changed. The rest of the file, including \#include and
+ * \#define lines, is kept as it is: grompp interprets it.
  */
 class TopFile : public TopologyFile
 {

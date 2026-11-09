@@ -51,7 +51,8 @@
 namespace gmx
 {
 
-/*! \internal \brief
+/*! \internal
+ * \brief
  * An open file that is closed when the helper goes out of scope.
  *
  * A file object keeps its open file in an IOHelper, so the file is closed
