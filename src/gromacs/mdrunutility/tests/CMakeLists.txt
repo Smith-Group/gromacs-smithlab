@@ -70,6 +70,8 @@ if (GMX_MDMODULE_PLUGINS)
     endfunction()
     gmx_add_test_mdmodule_plugin(mdrunutility-test-plugin test-plugin plugins/testplugin.cpp)
     target_compile_definitions(mdrunutility-test-plugin PRIVATE TEST_PLUGIN_NAME="test-plugin")
+    gmx_add_test_mdmodule_plugin(mdrunutility-test-other-plugin other-test-plugin plugins/testplugin.cpp)
+    target_compile_definitions(mdrunutility-test-other-plugin PRIVATE TEST_PLUGIN_NAME="other-test-plugin")
     gmx_add_test_mdmodule_plugin(mdrunutility-test-misnamed-plugin misnamed-plugin plugins/testplugin.cpp)
     target_compile_definitions(mdrunutility-test-misnamed-plugin PRIVATE TEST_PLUGIN_NAME="another-name")
     gmx_add_test_mdmodule_plugin(mdrunutility-test-incompatible-plugin incompatible-plugin

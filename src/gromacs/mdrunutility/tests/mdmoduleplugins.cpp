@@ -44,6 +44,7 @@
 
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -51,14 +52,18 @@
 
 #include "gromacs/mdrun/mdmodulepluginloader.h"
 #include "gromacs/mdrun/mdmodules.h"
+#include "gromacs/mdrunutility/mdmodulesnotifiers.h"
 #include "gromacs/mdtypes/inputrec.h"
 #include "gromacs/mdtypes/mdmoduleplugin.h"
 #include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/keyvaluetree.h"
 #include "gromacs/utility/keyvaluetreebuilder.h"
+#include "gromacs/utility/keyvaluetreemdpwriter.h"
 #include "gromacs/utility/keyvaluetreetransform.h"
 #include "gromacs/utility/stringcompare.h"
+#include "gromacs/utility/stringstream.h"
 #include "gromacs/utility/stringutil.h"
+#include "gromacs/utility/textwriter.h"
 
 namespace gmx
 {
@@ -140,6 +145,56 @@ TEST(MDModulePluginsTest, RecordsLoadedPlugins)
     EXPECT_EQ(entry["api-major"].cast<int64_t>(), static_cast<int64_t>(host.apiMajor));
     EXPECT_EQ(entry["api-hash"].cast<std::string>(),
               formatString("%016llx", static_cast<unsigned long long>(host.apiHash)));
+}
+
+/*! \brief What the order of the modules decides when plugins \p names are loaded
+ *
+ * That is the mdp output, as grompp writes it to mdout.mdp, and the keys
+ * that the preprocessing hooks write, in the order of the hooks.
+ */
+std::pair<std::string, std::vector<std::string>> mdpOutputAndHookOrder(const std::vector<std::string>& names)
+{
+    MDModules mdModules;
+    mdModules.addPlugins(names, c_testPluginSearchPath);
+
+    KeyValueTreeTransformer transform;
+    transform.rules()->addRule().keyMatchType("/", StringCompareType::CaseAndDashInsensitive);
+    mdModules.initMdpTransform(transform.rules());
+    const KeyValueTreeObject params =
+            transform.transform(KeyValueTreeBuilder().build(), nullptr).object();
+    t_inputrec ir;
+    mdModules.assignOptionsToModules(params, nullptr, &ir);
+    KeyValueTreeBuilder mdpOutput;
+    auto                mdpOutputObject = mdpOutput.rootObject();
+    mdModules.buildMdpOutput(&mdpOutputObject);
+    StringOutputStream mdpStream;
+    {
+        TextWriter writer(&mdpStream);
+        writeKeyValueTreeAsMdp(&writer, mdpOutput.build());
+    }
+
+    mdModules.subscribeToPreProcessingNotifications();
+    KeyValueTreeBuilder hookOutput;
+    mdModules.notifiers().preProcessingNotifier_.notify(hookOutput.rootObject());
+    const KeyValueTreeObject hookTree = hookOutput.build();
+    std::vector<std::string> hookOrder;
+    for (const auto& property : hookTree.properties())
+    {
+        hookOrder.push_back(property.key());
+    }
+    return { mdpStream.toString(), hookOrder };
+}
+
+TEST(MDModulePluginsTest, ListOrderChangesNeitherMdpOutputNorHookOrder)
+{
+    const auto oneOrder   = mdpOutputAndHookOrder({ "test-plugin", "other-test-plugin" });
+    const auto otherOrder = mdpOutputAndHookOrder({ "other-test-plugin", "test-plugin" });
+    EXPECT_EQ(oneOrder.first, otherOrder.first);
+    EXPECT_THAT(oneOrder.first, HasSubstr("other-test-plugin-value"));
+    EXPECT_EQ(oneOrder.second, otherOrder.second);
+    // Plugins are sorted by name
+    EXPECT_EQ(oneOrder.second,
+              (std::vector<std::string>{ "other-test-plugin-hook", "test-plugin-hook" }));
 }
 
 TEST(MDModulePluginsTest, RefusesMissingPlugin)

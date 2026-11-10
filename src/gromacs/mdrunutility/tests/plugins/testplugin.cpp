@@ -33,7 +33,8 @@
  */
 /*! \internal \file
  * \brief
- * An MDModules plugin with one mdp option, for the tests of the loader
+ * An MDModules plugin with one mdp option and one preprocessing hook, for the
+ * tests of the loader
  *
  * \author Amr Alhossary <amr_alhossary@hotmail.com>
  * \ingroup module_mdrunutility
@@ -44,6 +45,7 @@
 #include <string>
 #include <string_view>
 
+#include "gromacs/mdrunutility/mdmodulesnotifiers.h"
 #include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/mdtypes/imdpoptionprovider.h"
 #include "gromacs/mdtypes/mdmodulepluginentrypoints.h"
@@ -65,7 +67,10 @@ namespace test
 namespace
 {
 
-//! A module with one integer mdp option, test-plugin-value, in its own mdp section
+/*! \brief A module with one integer mdp option, TEST_PLUGIN_NAME-value, in its own mdp section
+ *
+ * Its preprocessing hook writes TEST_PLUGIN_NAME-hook, so that the tests see the hook order.
+ */
 class TestPluginModule final : public IMDModule, public IMdpOptionProvider
 {
 public:
@@ -73,27 +78,32 @@ public:
     IMdpOptionProvider* mdpOptionProvider() override { return this; }
     IMDOutputProvider*  outputProvider() override { return nullptr; }
     void                initForceProviders(ForceProviders* /* forceProviders */) override {}
-    void subscribeToPreProcessingNotifications(MDModulesNotifiers* /* notifiers */) override {}
+    void subscribeToPreProcessingNotifications(MDModulesNotifiers* notifiers) override
+    {
+        notifiers->preProcessingNotifier_.subscribe(
+                [](KeyValueTreeObjectBuilder builder)
+                { builder.addValue<std::string>(TEST_PLUGIN_NAME "-hook", "called"); });
+    }
     void subscribeToSimulationSetupNotifications(MDModulesNotifiers* /* notifiers */) override {}
     void subscribeToSimulationRunNotifications(MDModulesNotifiers* /* notifiers */) override {}
 
     // From IMdpOptionProvider
-    std::string_view mdpSectionName() const override { return "test-plugin"; }
+    std::string_view mdpSectionName() const override { return TEST_PLUGIN_NAME; }
     void             initMdpTransform(IKeyValueTreeTransformRules* rules) override
     {
         rules->addRule()
-                .from<std::string>("/test-plugin-value")
-                .to<int>("/test-plugin/value")
+                .from<std::string>("/" TEST_PLUGIN_NAME "-value")
+                .to<int>("/" TEST_PLUGIN_NAME "/value")
                 .transformWith(&fromStdString<int>);
     }
     void initMdpOptions(IOptionsContainerWithSections* options) override
     {
-        auto section = options->addSection(OptionSection("test-plugin"));
+        auto section = options->addSection(OptionSection(TEST_PLUGIN_NAME));
         section.addOption(IntegerOption("value").store(&value_));
     }
     void buildMdpOutput(KeyValueTreeObjectBuilder* builder) const override
     {
-        builder->addValue<std::string>("test-plugin-value", toString(value_));
+        builder->addValue<std::string>(TEST_PLUGIN_NAME "-value", toString(value_));
     }
 
 private:
