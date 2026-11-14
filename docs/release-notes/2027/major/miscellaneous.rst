@@ -60,6 +60,7 @@ when no output file was selected. They now stop with a fatal error and a non-zer
 
 When the check run of the first benchmark failed, :ref:`gmx tune_pme` exited with the raw
 status of the failed command, which could be truncated to zero. It now exits with 1.
+
 File formats are read and written through format objects
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""
 
