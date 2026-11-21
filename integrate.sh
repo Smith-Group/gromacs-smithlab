@@ -28,9 +28,21 @@
 #                           Exit 0 = done, 2 = error, 3 = conflict.
 #   ./integrate.sh check    report only: has upstream main moved, has any MR
 #                           head moved, been merged or closed, since the last
-#                           manifest? Needs no clone. Exit 0 = nothing moved,
-#                           1 = something moved (re-run `run`), 2 = error.
-#                           Meant to be called from a scheduled job.
+#                           manifest, or is the manifest older than
+#                           MAX_AGE_DAYS? Needs no clone. Exit 0 = nothing to
+#                           do, 1 = re-run `run`, 2 = error. Meant to be
+#                           called from a scheduled job.
+#   ./integrate.sh publish  push the last result to the lab repository:
+#                           `main` = the upstream base (fast-forward only),
+#                           `lab/main` = the combined branch (replaced, since
+#                           every run rebuilds it), `integration` = this
+#                           directory (script, MR list, manifests).
+#
+# BRANCHES IN THE LAB REPOSITORY
+#   integration  this script, mr-list.txt, manifests/, README.md. Its own
+#                history, unrelated to GROMACS. The repository's default.
+#   lab/main     the combined GROMACS to build and install.
+#   main         a plain mirror of upstream main, never committed to.
 #
 #   Settings (environment variables, all optional):
 #     GMX_REPO       clone to work in (default: ./gromacs next to this
@@ -41,6 +53,8 @@
 #     BASE_COMMIT    pin the upstream base (default: tip of upstream main)
 #     OUTPUT_BRANCH  default lab/main
 #     LAB_TAG        default smithlab
+#     LAB_REPO_URL   where `publish` pushes (default below)
+#     MAX_AGE_DAYS   `check` asks for a re-run after this many days (31)
 #
 # THE MR LIST
 #   mr-list.txt, next to this script, is the only place that says which MRs
@@ -87,6 +101,8 @@ MANIFEST_DIR=$HERE/manifests
 GMX_REPO=${GMX_REPO:-$HERE/gromacs}
 OUTPUT_BRANCH=${OUTPUT_BRANCH:-lab/main}
 LAB_TAG=${LAB_TAG:-smithlab}
+LAB_REPO_URL=${LAB_REPO_URL:-https://github.com/Smith-Group/gromacs-smithlab.git}
+MAX_AGE_DAYS=${MAX_AGE_DAYS:-31}
 IN_TREE_MANIFEST=lab-integration-manifest.txt
 CARRY_EXCLUDE=docs/release-notes   # not carried forward from release-branch MRs
 
@@ -128,6 +144,12 @@ do_check() {
         echo "upstream $BASE_BRANCH moved: ${old:0:10} -> ${new:0:10}"; moved=1
     else
         echo "upstream $BASE_BRANCH unchanged at ${old:0:10}"
+    fi
+    local generated age
+    generated=$(awk -F= '$1 == "generated" { print $2 }' "$last")
+    age=$(( ($(date -u +%s) - $(date -u -d "$generated" +%s)) / 86400 ))
+    if [ "$age" -ge "$MAX_AGE_DAYS" ]; then
+        echo "last manifest is $age days old (limit $MAX_AGE_DAYS)"; moved=1
     fi
     local series iid state target sha title oldsha
     while read -r series iid; do
@@ -374,6 +396,11 @@ do_run() {
     local out=$MANIFEST_DIR/manifest-$date-${result:0:10}.txt
     { cat "$GMX_REPO/$IN_TREE_MANIFEST"; echo "result_branch=$OUTPUT_BRANCH"; echo "result_commit=$result"; } > "$out"
     cp "$out" "$MANIFEST_DIR/latest.txt"
+    if git -C "$HERE" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        git -C "$HERE" add "$out" "$MANIFEST_DIR/latest.txt"
+        git -C "$HERE" commit -q -m "Record the integration of $(date -u +%Y-%m-%d) ($version)" \
+            -m "lab/main ${result:0:10} on upstream $BASE_BRANCH $(G rev-parse --short=10 "$BASE")."
+    fi
 
     echo
     note "done: $OUTPUT_BRANCH = ${result:0:10} in $GMX_REPO"
@@ -382,8 +409,31 @@ do_run() {
     awk -F'\t' '$1 == "mr" { printf "   !%s %s  %s\n", $2, substr($3, 1, 10), $7 }' "$out"
 }
 
+# --- publish mode ------------------------------------------------------------
+
+do_publish() {
+    local last=$MANIFEST_DIR/latest.txt base result head remote_lab
+    [ -f "$last" ] || die "nothing to publish: no manifest yet"
+    base=$(awk -F= '$1 == "base_commit" { print $2 }' "$last")
+    result=$(awk -F= '$1 == "result_commit" { print $2 }' "$last")
+    head=$(G rev-parse "$OUTPUT_BRANCH")
+    [ "$head" = "$result" ] || die "$OUTPUT_BRANCH is ${head:0:10}, the manifest says ${result:0:10}; re-run"
+    [ -z "$(git -C "$HERE" status --porcelain --untracked-files=no)" ] \
+        || die "uncommitted changes in $HERE; commit them first"
+    note "publishing to $LAB_REPO_URL"
+    note "main     -> ${base:0:10} (fast-forward only)"
+    G push -q "$LAB_REPO_URL" "$base:refs/heads/main"
+    remote_lab=$(git ls-remote "$LAB_REPO_URL" "refs/heads/$OUTPUT_BRANCH" | cut -f1)
+    note "$OUTPUT_BRANCH -> ${result:0:10} (replacing ${remote_lab:0:10})"
+    G push -q --force-with-lease="refs/heads/$OUTPUT_BRANCH:$remote_lab" "$LAB_REPO_URL" \
+        "$result:refs/heads/$OUTPUT_BRANCH"
+    note "integration -> $(git -C "$HERE" rev-parse --short=10 HEAD)"
+    git -C "$HERE" push -q "$LAB_REPO_URL" "HEAD:refs/heads/integration"
+}
+
 case ${1:-} in
-    run)   do_run ;;
-    check) do_check ;;
+    run)     do_run ;;
+    check)   do_check ;;
+    publish) do_publish ;;
     *)     sed -n '2,/^set -euo/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'; exit 2 ;;
 esac
