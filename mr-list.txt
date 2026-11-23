@@ -5,11 +5,13 @@
 # A series is a chain of stacked MRs, listed bottom first. Only the last
 # MR of a series is merged; every earlier one must already be inside it,
 # and integrate.sh checks that. An MR that targets a release branch
-# instead of main is carried forward by cherry-picking its own commits.
+# instead of main is carried forward by cherry-picking its own commits
+# (once merged, the commits it was merged as on that branch).
 # Series are applied in the order they first appear in this file.
 #
 # To add an MR: add a line. To drop one: delete or comment out its line.
-# MRs that upstream has merged are skipped automatically.
+# MRs whose content is already in the base (upstream main plus the newest
+# release branch) are skipped automatically, and the manifest says so.
 
 # MDModules restructure (#5748)
 mdmodules  6402   MR1 registration
