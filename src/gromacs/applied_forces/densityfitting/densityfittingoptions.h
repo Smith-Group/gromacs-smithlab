@@ -42,6 +42,7 @@
 #define GMX_APPLIED_FORCES_DENSITYFITTINGOPTIONS_H
 
 #include <string>
+#include <string_view>
 
 #include "gromacs/mdtypes/imdpoptionprovider.h"
 
@@ -61,6 +62,9 @@ class KeyValueTreeBuilder;
 class DensityFittingOptions final : public IMdpOptionProvider
 {
 public:
+    //! From IMdpOptionProvider
+    std::string_view mdpSectionName() const override { return "applied-forces"; }
+
     //! From IMdpOptionProvider
     void initMdpTransform(IKeyValueTreeTransformRules* rules) override;
 

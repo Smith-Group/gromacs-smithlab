@@ -45,6 +45,7 @@
 #include "output_control.h"
 
 #include <memory>
+#include <string_view>
 
 #include "gromacs/gmxpreprocess/inputrecstrings.h"
 #include "gromacs/mdtypes/imdmodule.h"
@@ -87,6 +88,8 @@ public:
     void                initForceProviders(ForceProviders* /* forceProviders */) override {}
 
     // From IMdpOptionProvider
+    std::string_view mdpSectionName() const override { return ""; }
+
     void initMdpTransform(IKeyValueTreeTransformRules* transform) override;
     void initMdpOptions(IOptionsContainerWithSections* options) override;
     void buildMdpOutput(KeyValueTreeObjectBuilder* builder) const override;

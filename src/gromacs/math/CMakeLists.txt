@@ -94,6 +94,23 @@ if(GMX_INSTALL_LEGACY_API)
     install(TARGETS math FILE_SET public_headers DESTINATION include)
 endif()
 
+# Headers that MDModules plugins need beyond the legacy API, installed
+# when plugins can be loaded
+if(GMX_MDMODULE_PLUGINS)
+    target_sources(math
+        INTERFACE
+            FILE_SET mdmodule_plugin_headers
+            TYPE HEADERS
+            BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
+            FILES
+                include/gromacs/math/arrayrefwithpadding.h
+                include/gromacs/math/multidimarray.h
+    )
+    if(GMX_INSTALL_LEGACY_API)
+        install(TARGETS math FILE_SET mdmodule_plugin_headers DESTINATION include)
+    endif()
+endif()
+
 if (BUILD_TESTING)
     add_subdirectory(tests)
 endif()

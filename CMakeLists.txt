@@ -691,6 +691,9 @@ set(GMX_INSTALL_CMAKEDIR  ${CMAKE_INSTALL_DATAROOTDIR}/cmake)
 # TODO: Make GMXRC adapt if this is changed
 set(GMX_INSTALL_PKGCONFIGDIR ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
+# Where mdrun and grompp look for MDModules plugins by default
+set(GMX_INSTALL_MDMODULE_PLUGINDIR ${CMAKE_INSTALL_LIBDIR}/gromacs/plugins)
+
 list(APPEND INSTALLED_HEADER_INCLUDE_DIRS ${CMAKE_INSTALL_INCLUDEDIR})
 
 # Binary and library suffix options
@@ -1031,6 +1034,7 @@ include(gmxManageLinearAlgebraLibraries)
 
 include(gmxManagePluginSupport)
 gmx_manage_plugin_support()
+gmx_manage_mdmodule_plugin_support()
 
 if(GMX_USE_PLUGINS)
     if(NOT GMX_VMD_PLUGIN_PATH)

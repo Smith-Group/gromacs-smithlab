@@ -86,6 +86,61 @@ class changes. The `virtual` keyword should not be specified,
 because this is redundant when `override` is used. This follows
 the Cpp Core Guidelines (guideline C.128).
 
+What the host has to know about a module, it reads from the
+gmx::MDModuleDescriptor that `describe()` fills, after the mdp
+options have been assigned to the module: whether the module couples
+the simulations of a multi-simulation run, whether it provides the
+direct Coulomb interactions, which energy terms it writes, and whether
+it writes forces on halo atoms. The host does not infer these from what
+the module subscribes to; a module that subscribes to the
+multi-simulation notification, or adds a force provider for halo atoms,
+without declaring it is refused at setup. The host writes the declared
+energy terms to the energy file.
+
+Hooks in the MD step
+--------------------
+
+A module registers its hooks in gmx::ForceProviders, each with its own
+gmx::HookOrder: a gmx::StepPhase and a priority within it. Hooks run by
+phase, then by priority; hooks with the same order run in the order they
+were registered, which is the order of the modules. A module can have
+hooks in several phases.
+
+- gmx::IStepPreparer::prepareStep() runs before the work of the step is
+  set up. It gets the step, the time and whether the step searches pairs,
+  writes a checkpoint or is the last one, and can ask for the potential
+  energy or the virial at the step. All preparers are called, and their
+  requests are combined. The legacy MD simulator and rerun call it.
+- gmx::IForceProvider::calculateForces() runs during the force
+  computation, in the phases up to gmx::StepPhase::Biases. A force
+  provider added without an order runs in phase Biases with priority 0,
+  as all providers did before phases existed.
+- gmx::IPostEnergyProvider::applyAfterPotentialEnergy() runs after the
+  potential energy of the rank is accumulated and the forces on the home
+  atoms are complete, in phase gmx::StepPhase::EnergyDependent or later,
+  e.g. to bias the potential energy. Its module declares this in its
+  descriptor, and the update then runs on the CPU.
+
+Halo forces
+-----------
+
+A force provider usually writes forces on home atoms only. A provider
+of pair forces between home atoms and the halo, added with
+gmx::ForceProviderAtoms::HomeAndHalo, also gets the number of local
+atoms including the halo in gmx::ForceProviderInput and the force
+buffer with shift forces in gmx::ForceProviderOutput. The forces on
+halo atoms are then communicated to their home ranks, and the forces
+enter the virial through the shift forces, as for the nonbonded
+kernels. With domain decomposition, the halo holds the periodic images
+needed in the decomposed dimensions; a pair across a periodic boundary
+in the other dimensions adds its shift force, as the bonded forces do.
+
+The force providers are called on every PP rank at every step that
+computes forces, so a provider may communicate. The balancing region
+for dynamic load balancing is closed by then; a provider can add the
+cycles of its computation to the load with
+DDBalanceRegionHandler::addCyclesAfterForceComputationCpu().
+
 Handling mdp input
 ------------------
 
@@ -100,6 +155,15 @@ or XML), where the structure matches the declared options.  As with other uses
 of the options module, the module needs to declare local variables where the
 values from the options will be assigned.  The defined structure will also be
 used for storing in the tpr file (see below).
+
+mdpSectionName() names the section of the structured input that holds the
+options of the module, e.g. `applied-forces`; the flat mdp file has no
+sections.  The framework creates the section, so initMdpOptions() and
+initMdpTransform() see only their own part of it.  Modules that return the
+same name share the section, so their option names must differ.  The
+framework calls the modules section by section and, within a section, in the
+order they are registered with gmx::MDModules; this is also the order of the
+fields in mdout.mdp.  An empty name places the options at the top level.
 
 initMdpTransform() should declare the mapping from current flat mdp format to
 the structured format defined in initMdpOptions().  For now, this makes it
@@ -232,3 +296,93 @@ that tree.
 
 To restore parameters, subscribe to the `const KeyValueTreeObject &`
 notification that returns the tree that is build by the KeyValueTreeBuilder*.
+
+Plugin API version
+------------------
+
+A module can be built outside \Gromacs and loaded at run time as a plugin.
+The headers that such a module is built against form the plugin interface,
+listed in `src/gromacs/mdtypes/mdmoduleapi.cmake`. Its version has two parts,
+defined in the generated header `gromacs/mdtypes/mdmoduleapiversion.h`:
+
+* `GMX_MDMODULE_API_MAJOR` is maintained by hand. A plugin built for one major
+  runs on every host with the same major.
+* `GMX_MDMODULE_API_HASH` is a hash of the interface headers, computed by CMake.
+
+Within a major the interface only grows. Fields are appended to the structs
+that the host allocates, such as gmx::MDModuleDescriptor and `GmxHostApiInfo`,
+so a module built against an older header sets or reads only the fields it
+knows; a new kind of hook is a new interface; a virtual function is never added
+to, removed from or reordered in an existing interface. Any other change
+increments the major. The interface headers do not change in a release branch.
+
+This is what a plugin can rely on: a plugin built against one \Gromacs release
+loads on every \Gromacs with the same major version of the interface, in
+particular on every patch release of the same series. It has to be built with
+the same compiler family and standard library as the host, because C++ objects
+cross the boundary; the host cannot check this. A plugin whose build has a
+different hash than the host, within the same major, is loaded and the log says
+which revision it was built against.
+
+The test `MDModuleApiHashTest` fails when the interface headers change and
+`GMX_MDMODULE_API_RECORDED_HASH` in `mdmoduleapi.cmake` is not updated. A
+change to these headers therefore updates the recorded hash, adds a release
+note and, if it is not append-only, increments the major.
+
+The host describes itself to a plugin with gmx::hostApiInfo(), which returns
+the version, the size of `real` and the MPI of the host in a `GmxHostApiInfo`.
+A plugin describes itself to the host in a `GmxPluginInfo`: its name, its
+version and the version of the interface it was built against.
+
+Plugins
+-------
+
+A plugin is a shared module that defines four entry points with C linkage,
+declared in `gromacs/mdtypes/mdmoduleplugin.h`. A plugin defines them by
+including `gromacs/mdtypes/mdmodulepluginentrypoints.h` in one source file and
+using the macro once:
+
+```C++
+  GMX_MDMODULE_PLUGIN("my-module", "1.0", MyModuleInfo::create)
+```
+
+`MyModuleInfo::create` returns a `std::unique_ptr<gmx::IMDModule>`, as the
+built-in modules do. The plugin then refuses a host with another major version
+of the interface, another precision or another MPI than the \Gromacs it was
+built against.
+
+A run names its plugins in the mdp option `mdmodule-plugins`. \Gromacs is
+built with `-DGMX_MDMODULE_PLUGINS=ON` to load them; MDModules::addPlugins()
+loads them with gmx::loadMDModulePlugin():
+
+* The plugin of module `name` is the file `name.so` in the first directory of
+  `GMX_MDMODULE_PLUGIN_PATH` that has it, or in the plugin directory of the
+  installation. Other files in these directories are never opened.
+* The host asks the plugin whether it can run in the host and refuses it with
+  the plugin's reason and the host's facts when it cannot. It also refuses a
+  plugin that calls itself by another name.
+* The modules of plugins are added after the built-in modules and the modules
+  added with MDModules::add(), sorted by name, so the order of the mdp option
+  does not matter.
+* A plugin stays loaded until the program exits, because callbacks that its
+  module registered can outlive the module.
+
+grompp loads the plugins before it reads their mdp options, and writes their
+names, versions and the version of the interface they were built against to
+the internal parameters in the tpr file. mdrun loads the plugins named there
+before it assigns the options, so a tpr file whose plugins cannot be loaded is
+refused.
+
+A plugin is built against an installed \Gromacs. When \Gromacs is configured
+with `-DGMX_MDMODULE_PLUGINS=ON` and `-DGMX_INSTALL_LEGACY_API=ON`, it installs
+the headers of the plugin interface and the headers that they and a typical
+module include, the thread-MPI headers of a thread-MPI build, and the generated
+`gromacs/mdtypes/mdmoduleapiversion.h`. Each module installs its headers in
+the file set `mdmodule_plugin_headers`. The imported target
+`Gromacs::libgromacs` gives a plugin the definitions that these headers need.
+
+The mdrun tests build the electric field as a plugin from its own source,
+under the name `electric-field-plugin`, and check that it gives the forces of
+the built-in module. The project in `src/programs/mdrun/tests/plugins` builds
+the same plugin against an installation, and CI builds it against the
+installation of a build with plugins and runs it there.

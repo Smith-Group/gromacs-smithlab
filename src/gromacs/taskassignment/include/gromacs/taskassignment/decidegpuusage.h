@@ -304,6 +304,8 @@ bool decideWhetherToUseGpusForBonded(bool              useGpuForNonbonded,
  * \param[in]  useModularSimulator          Whether the modular simulator is used
  * \param[in]  doRerun                      It this is a rerun.
  * \param[in]  enableGpuVirtualSites        Whether experimental GPU virtual-site support is on.
+ * \param[in]  moduleAddsForcesAfterEnergy  Whether a module adds forces after the potential
+ *                                          energy is known.
  * \param[in]  mdlog                        MD logger.
  *
  * \returns    Whether complete simulation can be run on GPU.
@@ -325,6 +327,7 @@ bool decideWhetherToUseGpuForUpdate(bool                 isDomainDecomposition,
                                     bool                 useModularSimulator,
                                     bool                 doRerun,
                                     bool                 enableGpuVirtualSites,
+                                    bool                 moduleAddsForcesAfterEnergy,
                                     const gmx::MDLogger& mdlog);
 
 /*! \brief Decide whether direct GPU communication can be used.

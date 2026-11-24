@@ -106,6 +106,7 @@
 #include "gromacs/mdtypes/forcebuffers.h"
 #include "gromacs/mdtypes/forcerec.h"
 #include "gromacs/mdtypes/group.h"
+#include "gromacs/mdtypes/iforceprovider.h"
 #include "gromacs/mdtypes/inputrec.h"
 #include "gromacs/mdtypes/interaction_const.h"
 #include "gromacs/mdtypes/md_enums.h"
@@ -653,6 +654,11 @@ void LegacySimulator::do_rerun()
                     *ir, *fr_, pullWork_, ed, mdAtoms_->nPerturbed > 0, runScheduleWork_->simulationWork);
         }
 
+
+        // The modules prepare for the step; rerun computes the energy and the virial
+        // at every step, so their requests are met
+        StepRequest stepRequest;
+        fr_->forceProviders->prepareStep({ step, t, bNS, false, isLastStep }, &stepRequest);
 
         runScheduleWork_->stepWork = setupStepWorkload(legacyForceFlags,
                                                        ir->mtsLevels,

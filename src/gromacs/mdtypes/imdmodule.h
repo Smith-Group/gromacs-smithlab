@@ -43,6 +43,9 @@
 #ifndef GMX_MDTYPES_IMDMODULE_H
 #define GMX_MDTYPES_IMDMODULE_H
 
+#include <vector>
+
+enum class InteractionFunction : int;
 
 namespace gmx
 {
@@ -53,11 +56,50 @@ class IMdpOptionProvider;
 struct MDModulesNotifiers;
 
 /*! \libinternal \brief
+ * What a module declares about itself for this run.
+ *
+ * The host reads the declarations after the mdp options have been
+ * assigned to the modules, so a module can derive them from its
+ * options. Fields are only ever appended to this struct, and the host
+ * allocates it, so a module sets only the fields it knows.
+ *
+ * \inlibraryapi
+ * \ingroup module_mdtypes
+ */
+struct MDModuleDescriptor
+{
+    /*! \brief Whether the module couples the simulations of a multi-simulation run.
+     *
+     * The simulations then act in lockstep: checkpoints and stop
+     * conditions are communicated between them. A module that
+     * subscribes to the gmx_multisim_t notification has to declare this.
+     */
+    bool sharesStateAcrossSimulations = false;
+    /*! \brief Whether the module computes the direct (short-range) Coulomb
+     * interactions instead of the nonbonded kernels. At most one module may.
+     */
+    bool providesDirectCoulomb = false;
+    /*! \brief Whether the module writes forces on halo atoms
+     *
+     * A module that adds a force provider with ForceProviderAtoms::HomeAndHalo
+     * has to declare this.
+     */
+    bool writesHaloForces = false;
+    /*! \brief Whether the module adds forces after the potential energy is known
+     *
+     * A module that adds an IPostEnergyProvider has to declare this. Such
+     * forces are added on the CPU, so the update then runs on the CPU.
+     */
+    bool addsForcesAfterPotentialEnergy = false;
+    //! The energy terms the module writes, which the host writes to the energy file
+    std::vector<InteractionFunction> energyTerms;
+};
+
+/*! \libinternal \brief
  * Extension module for \Gromacs simulations.
  *
- * The methods that return other interfaces can in the future return null for
- * those interfaces that the module does not need to implement, but currently
- * the callers are not prepared to generically handle various cases.
+ * The methods that return other interfaces return null for those
+ * interfaces that the module does not implement.
  *
  *  See also:
  * - imdpprovider_test_helper.h: Provides a helper to populate IMdpOptionProviders from key-value trees for testing.
@@ -71,6 +113,15 @@ class IMDModule
 public:
     virtual ~IMDModule() {}
 
+    /*! \brief Fills in what the module declares about itself for this run.
+     *
+     * Called after the mdp options have been assigned to the module.
+     * The host passes a descriptor that declares nothing, and the module
+     * sets what it declares; the default sets nothing. A module built
+     * against an older header therefore leaves the fields it does not
+     * know at their defaults.
+     */
+    virtual void describe(MDModuleDescriptor* /* descriptor */) const {}
     //! Returns an interface for handling mdp input (and tpr I/O).
     virtual IMdpOptionProvider* mdpOptionProvider() = 0;
     //! Returns an interface for handling output files during simulation.

@@ -206,6 +206,12 @@
 /* Compile with plugin support */
 #cmakedefine01 GMX_USE_PLUGINS
 
+/* Compile with support for loading MDModules plugins */
+#cmakedefine01 GMX_MDMODULE_PLUGINS
+
+/* File name suffix of an MDModules plugin */
+#define GMX_MDMODULE_PLUGIN_SUFFIX "@CMAKE_SHARED_MODULE_SUFFIX@"
+
 /* Fallback path for VMD plug-ins */
 #define GMX_VMD_PLUGIN_PATH "@GMX_VMD_PLUGIN_PATH@"
 

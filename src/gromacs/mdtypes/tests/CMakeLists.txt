@@ -35,6 +35,8 @@ gmx_add_unit_test(MdtypesUnitTest mdtypes-test
     HARDWARE_DETECTION
     CPP_SOURCE_FILES
         enerdata.cpp
+        forceproviders.cpp
+        mdmoduleplugin.cpp
         observablesreducer.cpp
         checkpointdata.cpp
         multipletimestepping.cpp
@@ -46,3 +48,12 @@ target_link_libraries(mdtypes-test PRIVATE
                       mdtypes
                       serialization
                       )
+
+# Fails when the MDModules plugin interface headers change without their recorded hash
+add_test(NAME MDModuleApiHashTest
+         COMMAND ${CMAKE_COMMAND}
+                 -DCOMPUTED_HASH=${GMX_MDMODULE_API_HASH}
+                 -DRECORDED_HASH=${GMX_MDMODULE_API_RECORDED_HASH}
+                 -DRECORD_FILE=src/gromacs/mdtypes/mdmoduleapi.cmake
+                 -P ${PROJECT_SOURCE_DIR}/cmake/gmxCheckMDModuleApiHash.cmake)
+set_tests_properties(MDModuleApiHashTest PROPERTIES LABELS "UnitTest")

@@ -240,6 +240,12 @@ public:
     }
 
     //! From IMDModule
+    //! When active, Colvars uses the multi-simulation record, so the simulations stay in step
+    void describe(MDModuleDescriptor* descriptor) const override
+    {
+        descriptor->sharesStateAcrossSimulations = colvarsOptions_.isActive();
+    }
+    //! From IMDModule
     IMdpOptionProvider* mdpOptionProvider() override { return &colvarsOptions_; }
     //! From IMDModule
     //! Colvars provide its own output

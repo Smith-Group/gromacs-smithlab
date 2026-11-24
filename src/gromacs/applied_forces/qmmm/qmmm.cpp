@@ -61,6 +61,7 @@
 #include "gromacs/mdtypes/iforceprovider.h"
 #include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/mdtypes/imdoutputprovider.h"
+#include "gromacs/topology/ifunc.h"
 #include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/classhelpers.h"
 #include "gromacs/utility/exceptions.h"
@@ -370,11 +371,6 @@ public:
         { this->qmmmSimulationParameters_.setMpiComm(mpiComm); };
         notifiers->simulationSetupNotifier_.subscribe(setMpiCommFunction);
 
-        // Adding output to energy file
-        const auto requestEnergyOutput = [](MDModulesEnergyOutputToQMMMRequestChecker* energyOutputRequest)
-        { energyOutputRequest->energyOutputToQMMM_ = true; };
-        notifiers->simulationSetupNotifier_.subscribe(requestEnergyOutput);
-
         // Request to disable PME-only ranks, which are not compatible with CP2K
         const auto requestPmeRanks = [](SeparatePmeRanksPermitted* pmeRanksPermitted)
         {
@@ -396,6 +392,16 @@ public:
 
     //! No subscriptions to run notifications
     void subscribeToSimulationRunNotifications(MDModulesNotifiers* /* notifiers */) override {}
+
+    //! From IMDModule
+    //! When active, QMMM writes its energy term
+    void describe(MDModuleDescriptor* descriptor) const override
+    {
+        if (qmmmOptions_.active())
+        {
+            descriptor->energyTerms = { InteractionFunction::QuantumMechanicalRegionEnergy };
+        }
+    }
 
     //! From IMDModule
     IMdpOptionProvider* mdpOptionProvider() override { return &qmmmOptions_; }

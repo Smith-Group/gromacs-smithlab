@@ -41,6 +41,7 @@
 #ifndef GMX_FMM_MDP_OPTIONS_H
 #define GMX_FMM_MDP_OPTIONS_H
 
+#include <string_view>
 #include <vector>
 
 #include "gromacs/mdtypes/imdpoptionprovider.h"
@@ -70,6 +71,11 @@ public:
      * @brief Declares FMM options in the MDP system.
      */
     void initMdpOptions(IOptionsContainerWithSections* options) override;
+
+    /**
+     * @brief Returns the name of the MDP section that holds the FMM options.
+     */
+    std::string_view mdpSectionName() const override { return "fast-multipole-method"; }
 
     /**
      * @brief Registers MDP transformation rules for FMM options.

@@ -48,9 +48,11 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
+#include "gromacs/mdrun/mdmodules.h"
 #include "gromacs/utility/classhelpers.h"
 #include "gromacs/utility/gmxmpi.h"
 
@@ -181,6 +183,8 @@ public:
     SimulationRunnerMdpSource mdpSource_;
     //! What will be written into a temporary mdp file before the grompp call
     std::string mdpInputContents_;
+    //! Make the modules that mdrun adds to the built-in ones
+    std::vector<MDModuleFactory> mdModuleFactories_;
 
 private:
     //! The file manager used to manage I/O

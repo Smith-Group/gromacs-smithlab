@@ -557,6 +557,12 @@ if (BUILD_SHARED_LIBS)
                 COMPONENT libraries
             INCLUDES DESTINATION include)
     target_compile_definitions(libgromacs PUBLIC $<INSTALL_INTERFACE:GMX_DOUBLE=${GMX_DOUBLE_VALUE}>)
+    if(GMX_MDMODULE_PLUGINS)
+        # gmxmpi.h, which the MDModules plugin interface includes, needs the MPI of the build
+        target_compile_definitions(libgromacs PUBLIC
+                                   $<INSTALL_INTERFACE:GMX_LIB_MPI=${GMX_LIB_MPI}>
+                                   $<INSTALL_INTERFACE:GMX_THREAD_MPI=$<BOOL:${GMX_THREAD_MPI}>>)
+    endif()
     # legacy headers use c++17 features, so consumer codes need to use that standard, too
     if(GMX_INSTALL_LEGACY_API)
         target_compile_features(libgromacs INTERFACE cxx_std_${CMAKE_CXX_STANDARD})

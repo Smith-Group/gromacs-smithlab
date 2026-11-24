@@ -33,7 +33,7 @@
  */
 #include "gmxpre.h"
 
-#include "mpicomm.h"
+#include "gromacs/utility/mpicomm.h"
 
 #include "config.h"
 

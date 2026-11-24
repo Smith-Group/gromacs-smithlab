@@ -47,6 +47,7 @@ set(MDTYPES_SOURCES
     interaction_const.cpp
     md_enums.cpp
     mdatoms.cpp
+    mdmoduleplugin.cpp
     multipletimestepping.cpp
     observableshistory.cpp
     observablesreducer.cpp
@@ -123,6 +124,49 @@ target_sources(mdtypes
 
 if(GMX_INSTALL_LEGACY_API)
     install(TARGETS mdtypes FILE_SET public_headers DESTINATION include)
+endif()
+
+# The version of the MDModules plugin interface
+include(${CMAKE_CURRENT_SOURCE_DIR}/mdmoduleapi.cmake)
+include(gmxMDModuleApiVersion)
+gmx_mdmodule_api_hash(GMX_MDMODULE_API_HASH ${PROJECT_SOURCE_DIR}/src ${GMX_MDMODULE_API_HEADERS})
+# Reconfigure when the interface headers change, so the hash stays current
+set(_mdmoduleApiHeaderPaths ${GMX_MDMODULE_API_HEADERS})
+list(TRANSFORM _mdmoduleApiHeaderPaths PREPEND "${PROJECT_SOURCE_DIR}/src/")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             ${_mdmoduleApiHeaderPaths} ${CMAKE_CURRENT_SOURCE_DIR}/mdmoduleapi.cmake)
+if(GMX_LIB_MPI)
+    set(GMX_MDMODULE_API_MPI 2)
+elseif(GMX_THREAD_MPI)
+    set(GMX_MDMODULE_API_MPI 1)
+else()
+    set(GMX_MDMODULE_API_MPI 0)
+endif()
+configure_file(mdmoduleapiversion.h.cmakein
+               ${PROJECT_BINARY_DIR}/src/include/gromacs/mdtypes/mdmoduleapiversion.h)
+
+# Headers that MDModules plugins need beyond the legacy API, installed
+# when plugins can be loaded
+if(GMX_MDMODULE_PLUGINS)
+    target_sources(mdtypes
+        INTERFACE
+            FILE_SET mdmodule_plugin_headers
+            TYPE HEADERS
+            BASE_DIRS ${PROJECT_SOURCE_DIR}/src
+            FILES
+                forceoutput.h
+                iforceprovider.h
+                imdmodule.h
+                imdoutputprovider.h
+                imdpoptionprovider.h
+                mdmoduleplugin.h
+                mdmodulepluginentrypoints.h
+    )
+    if(GMX_INSTALL_LEGACY_API)
+        install(TARGETS mdtypes FILE_SET mdmodule_plugin_headers DESTINATION include)
+        install(FILES ${PROJECT_BINARY_DIR}/src/include/gromacs/mdtypes/mdmoduleapiversion.h
+                DESTINATION include/gromacs/mdtypes)
+    endif()
 endif()
 
 if (BUILD_TESTING)

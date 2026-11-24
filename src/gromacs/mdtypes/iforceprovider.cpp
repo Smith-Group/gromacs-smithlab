@@ -42,35 +42,138 @@
 
 #include "iforceprovider.h"
 
+#include <algorithm>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 #include "gromacs/timing/wallcycle.h"
+#include "gromacs/utility/exceptions.h"
 
 using namespace gmx;
+
+namespace
+{
+
+//! Whether a hook in order \p a runs before one in order \p b
+bool runsBefore(const HookOrder& a, const HookOrder& b)
+{
+    return std::tie(a.phase, a.priority) < std::tie(b.phase, b.priority);
+}
+
+//! Inserts \p entry after the entries that run before it or together with it
+template<typename Entry>
+void insertInOrder(std::vector<Entry>* entries, Entry entry)
+{
+    const auto position = std::upper_bound(entries->begin(),
+                                           entries->end(),
+                                           entry,
+                                           [](const Entry& a, const Entry& b)
+                                           { return runsBefore(a.order, b.order); });
+    entries->insert(position, std::move(entry));
+}
+
+} // namespace
 
 class ForceProviders::Impl
 {
 public:
     Impl(gmx_wallcycle* wallCycle) : wallCycle_(wallCycle) {}
 
-    std::vector<std::pair<IForceProvider*, std::optional<WallCycleCounter>>> providers_;
-    gmx_wallcycle*                                                           wallCycle_;
+    //! A provider with its order, its cycle counter and the atoms it writes forces on
+    struct Entry
+    {
+        IForceProvider*                 provider;
+        HookOrder                       order;
+        std::optional<WallCycleCounter> wallCycleCounter;
+        ForceProviderAtoms              atoms;
+    };
+
+    //! A hook after the potential energy, with its order and its cycle counter
+    struct PostEnergyEntry
+    {
+        IPostEnergyProvider*            provider;
+        HookOrder                       order;
+        std::optional<WallCycleCounter> wallCycleCounter;
+    };
+
+    //! Calls \p call within the cycle counter \p counter, if there is one
+    template<typename Call>
+    void timed(const std::optional<WallCycleCounter>& counter, Call call) const
+    {
+        if (counter.has_value())
+        {
+            wallcycle_start(wallCycle_, counter.value());
+        }
+        call();
+        if (counter.has_value())
+        {
+            wallcycle_stop(wallCycle_, counter.value());
+        }
+    }
+
+    //! The force providers, in the order they run
+    std::vector<Entry> providers_;
+    //! The components that prepare for each step
+    std::vector<IStepPreparer*> stepPreparers_;
+    //! The hooks after the potential energy, in the order they run
+    std::vector<PostEnergyEntry> postEnergyProviders_;
+    gmx_wallcycle*               wallCycle_;
 };
 
 ForceProviders::ForceProviders(gmx_wallcycle* wallCycle) : impl_(new Impl(wallCycle)) {}
 
 ForceProviders::~ForceProviders() {}
 
-void ForceProviders::addForceProvider(gmx::IForceProvider* provider, const std::string& cycleCounterName)
+void ForceProviders::addForceProvider(gmx::IForceProvider* provider,
+                                      const std::string&   cycleCounterName,
+                                      ForceProviderAtoms   atoms)
 {
+    addForceProvider(provider, HookOrder{}, cycleCounterName, atoms);
+}
+
+void ForceProviders::addForceProvider(gmx::IForceProvider* provider,
+                                      HookOrder            order,
+                                      const std::string&   cycleCounterName,
+                                      ForceProviderAtoms   atoms)
+{
+    if (order.phase > StepPhase::Biases)
+    {
+        GMX_THROW(APIError(
+                "A force provider runs before the potential energy is known, in phase Biases "
+                "or earlier; use an IPostEnergyProvider for a later phase"));
+    }
     std::optional<WallCycleCounter> counter;
     if (impl_->wallCycle_)
     {
         counter = impl_->wallCycle_->registerCycleCounter(cycleCounterName);
     }
 
-    impl_->providers_.emplace_back(provider, counter);
+    insertInOrder(&impl_->providers_, Impl::Entry{ provider, order, counter, atoms });
+}
+
+void ForceProviders::addStepPreparer(IStepPreparer* preparer)
+{
+    impl_->stepPreparers_.push_back(preparer);
+}
+
+void ForceProviders::addPostEnergyProvider(IPostEnergyProvider* provider,
+                                           HookOrder            order,
+                                           const std::string&   cycleCounterName)
+{
+    if (order.phase < StepPhase::EnergyDependent)
+    {
+        GMX_THROW(APIError(
+                "A hook after the potential energy runs in phase EnergyDependent or later; use "
+                "a force provider for an earlier phase"));
+    }
+    std::optional<WallCycleCounter> counter;
+    if (impl_->wallCycle_ && !cycleCounterName.empty())
+    {
+        counter = impl_->wallCycle_->registerCycleCounter(cycleCounterName);
+    }
+
+    insertInOrder(&impl_->postEnergyProviders_, Impl::PostEnergyEntry{ provider, order, counter });
 }
 
 bool ForceProviders::hasForceProvider() const
@@ -78,21 +181,60 @@ bool ForceProviders::hasForceProvider() const
     return !impl_->providers_.empty();
 }
 
+int ForceProviders::numHaloForceProviders() const
+{
+    return std::count_if(impl_->providers_.begin(),
+                         impl_->providers_.end(),
+                         [](const Impl::Entry& entry)
+                         { return entry.atoms == ForceProviderAtoms::HomeAndHalo; });
+}
+
+bool ForceProviders::hasPostEnergyProvider() const
+{
+    return !impl_->postEnergyProviders_.empty();
+}
+
+int ForceProviders::numPostEnergyProviders() const
+{
+    return gmx::ssize(impl_->postEnergyProviders_);
+}
+
+void ForceProviders::prepareStep(const StepInfo& stepInfo, StepRequest* request) const
+{
+    for (IStepPreparer* preparer : impl_->stepPreparers_)
+    {
+        StepRequest preparerRequest;
+        preparer->prepareStep(stepInfo, &preparerRequest);
+        request->needPotentialEnergy = request->needPotentialEnergy || preparerRequest.needPotentialEnergy;
+        request->needVirial = request->needVirial || preparerRequest.needVirial;
+    }
+}
+
 void ForceProviders::calculateForces(const ForceProviderInput& forceProviderInput,
                                      ForceProviderOutput*      forceProviderOutput) const
 {
-    for (auto& [provider, wallCycleCounter] : impl_->providers_)
+    // The providers of home-atom forces do not get the halo force buffer
+    ForceProviderOutput homeAtomsOutput   = *forceProviderOutput;
+    homeAtomsOutput.forceWithShiftForces_ = nullptr;
+
+    for (const auto& entry : impl_->providers_)
     {
-        if (wallCycleCounter.has_value())
-        {
-            wallcycle_start(impl_->wallCycle_, wallCycleCounter.value());
-        }
+        impl_->timed(entry.wallCycleCounter,
+                     [&]()
+                     {
+                         entry.provider->calculateForces(forceProviderInput,
+                                                         entry.atoms == ForceProviderAtoms::HomeAndHalo
+                                                                 ? forceProviderOutput
+                                                                 : &homeAtomsOutput);
+                     });
+    }
+}
 
-        provider->calculateForces(forceProviderInput, forceProviderOutput);
-
-        if (wallCycleCounter.has_value())
-        {
-            wallcycle_stop(impl_->wallCycle_, wallCycleCounter.value());
-        }
+void ForceProviders::applyAfterPotentialEnergy(const PostEnergyInput& input, ForceProviderOutput* output) const
+{
+    for (const auto& entry : impl_->postEnergyProviders_)
+    {
+        impl_->timed(entry.wallCycleCounter,
+                     [&]() { entry.provider->applyAfterPotentialEnergy(input, output); });
     }
 }

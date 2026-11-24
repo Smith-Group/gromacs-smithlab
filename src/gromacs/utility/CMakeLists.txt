@@ -147,6 +147,36 @@ if(GMX_INSTALL_LEGACY_API)
     install(TARGETS utility FILE_SET public_headers DESTINATION include)
 endif()
 
+# Headers that MDModules plugins need beyond the legacy API, installed
+# when plugins can be loaded
+if(GMX_MDMODULE_PLUGINS)
+    target_sources(utility
+        INTERFACE
+            FILE_SET mdmodule_plugin_headers
+            TYPE HEADERS
+            BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
+            FILES
+                include/gromacs/utility/any.h
+                include/gromacs/utility/cstringutil.h
+                include/gromacs/utility/gmxmpi.h
+                include/gromacs/utility/keyvaluetree.h
+                include/gromacs/utility/keyvaluetreebuilder.h
+                include/gromacs/utility/keyvaluetreetransform.h
+                include/gromacs/utility/mpicomm.h
+                include/gromacs/utility/strconvert.h
+    )
+    if(GMX_INSTALL_LEGACY_API)
+        install(TARGETS utility FILE_SET mdmodule_plugin_headers DESTINATION include)
+        if(GMX_THREAD_MPI)
+            # gmxmpi.h includes these in a thread-MPI build
+            install(FILES ${PROJECT_SOURCE_DIR}/src/external/thread_mpi/include/thread_mpi/mpi_bindings.h
+                          ${PROJECT_SOURCE_DIR}/src/external/thread_mpi/include/thread_mpi/tmpi.h
+                          ${PROJECT_SOURCE_DIR}/src/external/thread_mpi/include/thread_mpi/visibility.h
+                    DESTINATION include/thread_mpi)
+        endif()
+    endif()
+endif()
+
 if (BUILD_TESTING)
     add_subdirectory(tests)
 endif ()

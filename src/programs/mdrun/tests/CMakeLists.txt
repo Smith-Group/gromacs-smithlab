@@ -279,6 +279,61 @@ if (TEST MdrunMpi4RankPmeTests AND TEST MdrunMpi2RankPmeTests)
     set_tests_properties(MdrunMpi4RankPmeTests PROPERTIES DEPENDS MdrunMpi2RankPmeTests)
 endif()
 
+# Tests of the hooks of the module interface, with and without domain
+# decomposition
+set(exename "mdrun-module-hooks-test")
+gmx_add_gtest_executable(${exename} MPI
+    CPP_SOURCE_FILES
+        # files with code for tests
+        haloforces.cpp
+        pluginforces.cpp
+        stephooks.cpp
+        # pseudo-library for code for mdrun
+        $<TARGET_OBJECTS:mdrun_objlib>
+        )
+target_link_libraries(${exename} PRIVATE mdrun_test_infrastructure pbcutil)
+if (GMX_MDMODULE_PLUGINS)
+    # A plugin that the tests name in the mdp file
+    set(_testPluginDirectory ${CMAKE_CURRENT_BINARY_DIR}/plugins)
+    add_library(mdrun-test-force-plugin MODULE plugins/forceplugin.cpp)
+    set_target_properties(mdrun-test-force-plugin PROPERTIES
+                          PREFIX ""
+                          OUTPUT_NAME test-force-plugin
+                          LIBRARY_OUTPUT_DIRECTORY ${_testPluginDirectory})
+    target_link_libraries(mdrun-test-force-plugin PRIVATE
+                          common legacy_api legacy_modules utility mdtypes libgromacs)
+    add_dependencies(${exename} mdrun-test-force-plugin)
+    # The electric field built as a plugin from its own source. The plugin
+    # binds its calls to its own copy of the module, not to the one in libgromacs.
+    add_library(mdrun-test-electric-field-plugin MODULE
+                plugins/electricfieldplugin.cpp
+                ${PROJECT_SOURCE_DIR}/src/gromacs/applied_forces/electricfield.cpp)
+    set_target_properties(mdrun-test-electric-field-plugin PROPERTIES
+                          PREFIX ""
+                          OUTPUT_NAME electric-field-plugin
+                          LIBRARY_OUTPUT_DIRECTORY ${_testPluginDirectory})
+    target_link_libraries(mdrun-test-electric-field-plugin PRIVATE
+                          common legacy_api legacy_modules utility mdtypes libgromacs)
+    if(NOT APPLE)
+        target_link_options(mdrun-test-electric-field-plugin PRIVATE LINKER:-Bsymbolic-functions)
+    endif()
+    add_dependencies(${exename} mdrun-test-electric-field-plugin)
+else()
+    set(_testPluginDirectory "")
+endif()
+target_compile_definitions(${exename} PRIVATE TEST_PLUGIN_DIRECTORY="${_testPluginDirectory}")
+gmx_register_gtest_test(MdrunModuleHooks1RankTests ${exename} MPI_RANKS 1 OPENMP_THREADS 2 INTEGRATION_TEST IGNORE_LEAKS QUICK_GPU_TEST)
+gmx_register_gtest_test(MdrunModuleHooks2RankTests ${exename} MPI_RANKS 2 OPENMP_THREADS 2 INTEGRATION_TEST IGNORE_LEAKS QUICK_GPU_TEST)
+gmx_register_gtest_test(MdrunModuleHooks4RankTests ${exename} MPI_RANKS 4 OPENMP_THREADS 1 INTEGRATION_TEST IGNORE_LEAKS QUICK_GPU_TEST)
+# The tests write files whose names are not unique across test cases,
+# so they must not run concurrently. See #4654
+if (TEST MdrunModuleHooks2RankTests AND TEST MdrunModuleHooks1RankTests)
+    set_tests_properties(MdrunModuleHooks2RankTests PROPERTIES DEPENDS MdrunModuleHooks1RankTests)
+endif()
+if (TEST MdrunModuleHooks4RankTests AND TEST MdrunModuleHooks2RankTests)
+    set_tests_properties(MdrunModuleHooks4RankTests PROPERTIES DEPENDS MdrunModuleHooks2RankTests)
+endif()
+
 # Slow-running tests that target testing multiple-rank coordination behaviors
 # These tests are extremely slow without optimization or OpenMP, so only run them for
 # build types like Release or RelWithDebInfo and if the build has been configured

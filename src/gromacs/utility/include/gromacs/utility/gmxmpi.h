@@ -48,7 +48,10 @@
 #ifndef GMX_UTILITY_GMXMPI_H
 #define GMX_UTILITY_GMXMPI_H
 
-#include "config.h"
+// An installed GROMACS defines these for the code that uses its headers
+#if !defined(GMX_LIB_MPI) || !defined(GMX_THREAD_MPI)
+#    include "config.h"
+#endif
 
 /*! \cond */
 #if GMX_LIB_MPI

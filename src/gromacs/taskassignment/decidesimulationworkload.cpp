@@ -257,8 +257,10 @@ DomainLifetimeWorkload setupDomainLifetimeWorkload(const t_inputrec&         inp
                                        || simulationWork.useCpuNonbonded || simulationWork.useCpuPme
                                        || simulationWork.haveEwaldSurfaceContribution
                                        || inputrec.nwall > 0;
-    domainWork.haveCpuNonLocalForceWork =
-            domainWork.haveCpuBondedWork || domainWork.haveCpuNonbondedFreeEnergyWork;
+    // A force provider that writes halo forces adds them to the CPU force buffer
+    domainWork.haveCpuNonLocalForceWork = domainWork.haveCpuBondedWork
+                                          || domainWork.haveCpuNonbondedFreeEnergyWork
+                                          || fr.forceProviders->numHaloForceProviders() > 0;
     domainWork.haveLocalForceContribInCpuBuffer =
             domainWork.haveCpuLocalForceWork || simulationWork.havePpDomainDecomposition;
 

@@ -63,6 +63,7 @@
 struct gmx_mtop_t;
 class WarningHandler;
 enum class PbcType : int;
+enum class InteractionFunction : int;
 struct t_inputrec;
 struct gmx_multisim_t;
 
@@ -191,50 +192,16 @@ struct MDModulesPairlistConstructedSignal
     ArrayRef<const int> atomTypes_;
 };
 
-/*! \libinternal \brief Check if module outputs energy to a specific field.
+/*! \libinternal \brief The energy terms that modules write.
  *
- * Ensures that energy is output for this module.
+ * MDModules fills it from the energy terms the modules declare in
+ * their MDModuleDescriptor.
  */
-struct MDModulesEnergyOutputToDensityFittingRequestChecker
+struct MDModulesEnergyTerms
 {
-    //! Trigger output to density fitting energy field
-    bool energyOutputToDensityFitting_ = false;
+    //! The declared energy terms, in module registration order
+    std::vector<InteractionFunction> terms_;
 };
-
-/*! \libinternal \brief Check if QMMM module outputs energy to a specific field.
- *
- * Ensures that energy is output for QMMM module.
- */
-struct MDModulesEnergyOutputToQMMMRequestChecker
-{
-    //! Trigger output to QMMM energy field
-    bool energyOutputToQMMM_ = false;
-};
-
-/*! \libinternal \brief Check if NNPot module outputs energy to a specific field.
- *
- * Ensures that energy is output for NNPot module.
- */
-struct MDModulesEnergyOutputToNNPotRequestChecker
-{
-    //! Trigger output to NNPot energy field
-    bool energyOutputToNNPot_ = false;
-};
-
-/*!
- * \brief Indicates whether an MD module is a direct (short-range coulomb interactions) provider.
- *
- * std::optional lets the NB module know if a module provides
- * direct interactions, or if no choice was made.
- */
-struct MDModulesDirectProvider
-{
-    /*! \brief Whether an MD module is a direct provider
-     *
-     * If std::nullopt, no module reported a choice (defaults to NBNxM kernels) */
-    std::optional<bool> isDirectProvider = std::nullopt;
-};
-
 
 /*! \libinternal
  * \brief Collect errors for the energy calculation frequency.
@@ -490,15 +457,8 @@ struct MDModulesNotifiers
      * \tparam MDLogger&            Allows MdModule to use standard logging class for messages
      *                              output
      * \tparam gmx_mtop_t&          Provides the topology of the system to the modules
-     * \tparam MDModulesEnergyOutputToDensityFittingRequestChecker*
-     *                              Enables modules to report if they want to write their
-     *                              energy output to the density fitting field in the energy files
-     * \tparam MDModulesEnergyOutputToQMMMRequestChecker*
-     *                              Enables QMMM module to report if it wants to write its energy
-     *                              output to the "Quantum En." field in the energy files
-     * \tparam MDModulesEnergyOutputToNNPotRequestChecker*
-     *                              Enables NNPot module to report if it wants to write its energy
-     *                              output to the "NN Potential" field in the energy files
+     * \tparam MDModulesEnergyTerms* Answered by MDModules with the energy terms the modules
+     *                              declare, to be written to the energy files
      * \tparam SeparatePmeRanksPermitted*
      *                              Enables modules to report if they want to disable dedicated
      *                              PME ranks
@@ -520,9 +480,6 @@ struct MDModulesNotifiers
      * \tparam PlainPairlistRanges* Allows modules to request a range for the plain pairlist
      * \tparam MdRunInputFilename&  Allows modules to know .tpr filename during mdrun
      * \tparam EdrOutputFilename&   Allows modules to know .edr filename during mdrun
-     * \tparam MDModulesDirectProvider*
-     *                              Allows a modules to indicate whether it
-     *                              handle short-range coulomb interactions
      * \tparam PlumedInputFilename& Allows modules to know the optional .dat filename to be read by plumed
      */
     BuildMDModulesNotifier<const KeyValueTreeObject&,
@@ -530,9 +487,7 @@ struct MDModulesNotifiers
                            const StartingBehavior&,
                            const MDLogger&,
                            const gmx_mtop_t&,
-                           MDModulesEnergyOutputToDensityFittingRequestChecker*,
-                           MDModulesEnergyOutputToQMMMRequestChecker*,
-                           MDModulesEnergyOutputToNNPotRequestChecker*,
+                           MDModulesEnergyTerms*,
                            SeparatePmeRanksPermitted*,
                            const PbcType&,
                            const SimulationTimeStep&,
@@ -542,7 +497,6 @@ struct MDModulesNotifiers
                            PlainPairlistRanges*,
                            const MdRunInputFilename&,
                            const EdrOutputFilename&,
-                           MDModulesDirectProvider*,
                            const PlumedInputFilename&>::type simulationSetupNotifier_;
 
     /*! \brief Handles subscribing and calling callbacks during a running simulation.

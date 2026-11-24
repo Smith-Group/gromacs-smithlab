@@ -38,6 +38,7 @@ gmx_add_libgromacs_sources(
     legacysimulator.cpp
     md.cpp
     mdmodules.cpp
+    mdmodulepluginloader.cpp
     membedholder.cpp
     mimic.cpp
     minimize.cpp

@@ -614,6 +614,8 @@ static void checkPotentialEnergyValidity(int64_t step, const gmx_enerdata_t& ene
  * \param[in]     stepWork         Step schedule flags
  * \param[in,out] forceWithVirialMtsLevel0  Force and virial for MTS level0 forces
  * \param[in,out] forceWithVirialMtsLevel1  Force and virial for MTS level1 forces, can be nullptr
+ * \param[in,out] forceWithShiftForcesMtsLevel0  Home and halo forces and shift forces, MTS level0
+ * \param[in]     ddBalanceRegionHandler  The load balancing region handler, region closed here
  * \param[in,out] enerd            Energy buffer
  * \param[in,out] ed               Essential dynamics pointer
  * \param[in]     didNeighborSearch  Tells if we did neighbor searching this step,
@@ -622,28 +624,30 @@ static void checkPotentialEnergyValidity(int64_t step, const gmx_enerdata_t& ene
  * \todo Remove didNeighborSearch, which is used incorrectly.
  * \todo Convert all other algorithms called here to ForceProviders.
  */
-static void computeSpecialForces(FILE*                fplog,
-                                 const MpiComm&       mpiComm,
-                                 const gmx_domdec_t*  dd,
-                                 const t_inputrec&    inputrec,
-                                 Awh*                 awh,
-                                 gmx_enfrot*          enforcedRotation,
-                                 ImdSession*          imdSession,
-                                 pull_t*              pull_work,
-                                 int64_t              step,
-                                 double               t,
-                                 gmx_wallcycle*       wcycle,
-                                 ForceProviders*      forceProviders,
-                                 const matrix         box,
-                                 ArrayRef<const RVec> x,
-                                 const MDAtoms&       mdAtoms,
-                                 ArrayRef<const real> lambda,
-                                 const StepWorkload&  stepWork,
-                                 ForceWithVirial*     forceWithVirialMtsLevel0,
-                                 ForceWithVirial*     forceWithVirialMtsLevel1,
-                                 gmx_enerdata_t*      enerd,
-                                 edsam*               ed,
-                                 bool                 didNeighborSearch)
+static void computeSpecialForces(FILE*                         fplog,
+                                 const MpiComm&                mpiComm,
+                                 const gmx_domdec_t*           dd,
+                                 const t_inputrec&             inputrec,
+                                 Awh*                          awh,
+                                 gmx_enfrot*                   enforcedRotation,
+                                 ImdSession*                   imdSession,
+                                 pull_t*                       pull_work,
+                                 int64_t                       step,
+                                 double                        t,
+                                 gmx_wallcycle*                wcycle,
+                                 ForceProviders*               forceProviders,
+                                 const matrix                  box,
+                                 ArrayRef<const RVec>          x,
+                                 const MDAtoms&                mdAtoms,
+                                 ArrayRef<const real>          lambda,
+                                 const StepWorkload&           stepWork,
+                                 ForceWithVirial*              forceWithVirialMtsLevel0,
+                                 ForceWithVirial*              forceWithVirialMtsLevel1,
+                                 ForceWithShiftForces*         forceWithShiftForcesMtsLevel0,
+                                 const DDBalanceRegionHandler& ddBalanceRegionHandler,
+                                 gmx_enerdata_t*               enerd,
+                                 edsam*                        ed,
+                                 bool                          didNeighborSearch)
 {
     /* NOTE: Currently all ForceProviders only provide forces.
      *       When they also provide energies, remove this conditional.
@@ -660,7 +664,11 @@ static void computeSpecialForces(FILE*                fplog,
                 box,
                 mpiComm,
                 dd);
+        forceProviderInput.numAtomsWithHalo_ =
+                (dd != nullptr) ? dd_numAtomsZones(*dd) : mdAtoms.numHomeAtoms;
+        forceProviderInput.ddBalanceRegionHandler_ = &ddBalanceRegionHandler;
         ForceProviderOutput forceProviderOutput(forceWithVirialMtsLevel0, enerd);
+        forceProviderOutput.forceWithShiftForces_ = forceWithShiftForcesMtsLevel0;
 
         /* Collect forces from modules */
         forceProviders->calculateForces(forceProviderInput, &forceProviderOutput);
@@ -729,6 +737,86 @@ static void computeSpecialForces(FILE*                fplog,
     if (inputrec.bIMD && stepWork.computeForces)
     {
         imdSession->applyForces(forceWithVirialMtsLevel0->force_);
+    }
+}
+
+/*! \brief Runs the hooks that need the potential energy
+ *
+ * The hooks get the complete force on the home atoms: with multiple time
+ * stepping at a slow-force step, the combined force, which the update uses;
+ * what they add to it is also added to the normal force, which the
+ * constraint virial uses. Forces they put on virtual sites are spread.
+ *
+ * \param[in]     forceProviders    The hooks
+ * \param[in]     step              The current MD step
+ * \param[in]     simulationWork    Simulation schedule flags
+ * \param[in]     stepWork          Step schedule flags
+ * \param[in]     numHomeAtoms      The number of home atoms
+ * \param[in]     x                 The coordinates
+ * \param[in,out] force             The normal force
+ * \param[in,out] forceMtsCombined  The combined force with multiple time stepping, otherwise empty
+ * \param[in]     vsite             The virtual sites handler, can be nullptr
+ * \param[in]     box               The unit cell
+ * \param[in,out] virial            The force virial
+ * \param[in,out] enerd             Energy buffer
+ * \param[in,out] nrnb              Flop counters
+ * \param[in,out] wcycle            Wallcycle accounting struct
+ */
+static void applyPostEnergyProviders(const ForceProviders&     forceProviders,
+                                     int64_t                   step,
+                                     const SimulationWorkload& simulationWork,
+                                     const StepWorkload&       stepWork,
+                                     int                       numHomeAtoms,
+                                     ArrayRef<const RVec>      x,
+                                     ArrayRef<RVec>            force,
+                                     ArrayRef<RVec>            forceMtsCombined,
+                                     VirtualSitesHandler*      vsite,
+                                     const matrix              box,
+                                     tensor                    virial,
+                                     gmx_enerdata_t*           enerd,
+                                     t_nrnb*                   nrnb,
+                                     gmx_wallcycle*            wcycle)
+{
+    const bool        useCombined   = simulationWork.useMts && stepWork.computeSlowForces;
+    ArrayRef<RVec>    forceForHooks = useCombined ? forceMtsCombined : force;
+    std::vector<RVec> forceBeforeHooks;
+    if (useCombined)
+    {
+        forceBeforeHooks.assign(forceForHooks.begin(), forceForHooks.begin() + numHomeAtoms);
+    }
+
+    ForceWithVirial forceWithVirial(forceForHooks.subArray(0, numHomeAtoms), stepWork.computeVirial);
+    ForceProviderOutput output(&forceWithVirial, enerd);
+    matrix              virialBeforeHooks;
+    copy_mat(virial, virialBeforeHooks);
+    const PostEnergyInput input{
+        step, stepWork.computeEnergy, enerd->term[InteractionFunction::PotentialEnergy], virialBeforeHooks
+    };
+    forceProviders.applyAfterPotentialEnergy(input, &output);
+    if (stepWork.computeVirial)
+    {
+        m_add(virial, forceWithVirial.getVirial(), virial);
+    }
+
+    if (vsite)
+    {
+        /* The forces on the virtual sites were spread before and are zero,
+         * except those the hooks put on them
+         */
+        const VirtualSitesHandler::VirialHandling virialHandling =
+                (stepWork.computeVirial ? VirtualSitesHandler::VirialHandling::NonLinear
+                                        : VirtualSitesHandler::VirialHandling::None);
+        matrix vsiteVirial = { { 0 } };
+        vsite->spreadForces(x, forceForHooks, virialHandling, {}, vsiteVirial, nrnb, box, wcycle);
+        m_add(virial, vsiteVirial, virial);
+    }
+
+    if (useCombined)
+    {
+        for (int i = 0; i < numHomeAtoms; i++)
+        {
+            force[i] += forceForHooks[i] - forceBeforeHooks[i];
+        }
     }
 }
 
@@ -2322,6 +2410,8 @@ void do_force(FILE*                         fplog,
                              stepWork,
                              &forceOutMtsLevel0.forceWithVirial(),
                              forceOutMtsLevel1 ? &forceOutMtsLevel1->forceWithVirial() : nullptr,
+                             &forceOutMtsLevel0.forceWithShiftForces(),
+                             ddBalanceRegionHandler,
                              enerd,
                              ed,
                              stepWork.doNeighborSearch);
@@ -2734,6 +2824,24 @@ void do_force(FILE*                         fplog,
         {
             checkPotentialEnergyValidity(step, *enerd, inputrec);
         }
+    }
+
+    if (stepWork.computeForces && fr->forceProviders->hasPostEnergyProvider())
+    {
+        applyPostEnergyProviders(*fr->forceProviders,
+                                 step,
+                                 simulationWork,
+                                 stepWork,
+                                 mdAtoms.numHomeAtoms,
+                                 x.unpaddedArrayRef(),
+                                 force.unpaddedArrayRef(),
+                                 simulationWork.useMts ? forceView->forceMtsCombined() : ArrayRef<RVec>{},
+                                 vsite,
+                                 box,
+                                 vir_force,
+                                 enerd,
+                                 nrnb,
+                                 wcycle);
     }
 
     /* In case we don't have constraints and are using GPUs, the next balancing

@@ -3292,6 +3292,22 @@ Non-equilibrium MD
       velocities, i.e. energy minimization, normal-mode analysis and
       test-particle insertion.
 
+MDModules plugins
+^^^^^^^^^^^^^^^^^
+
+.. mdp:: mdmodule-plugins
+
+   (empty) [names]
+   The modules to load from plugins, separated by spaces. Each plugin
+   is the file ``<name>.so`` in the first directory of
+   ``GMX_MDMODULE_PLUGIN_PATH`` (directories separated by colons) that
+   has it, or, when that is not set, in ``lib/gromacs/plugins`` of the
+   |Gromacs| installation. A plugin then reads its own mdp options.
+   :ref:`gmx grompp` records the plugins in the tpr file, and
+   :ref:`gmx mdrun` loads them again from the same directories. A plugin
+   that is not found or was built for another |Gromacs| is an error.
+   Needs |Gromacs| built with ``-DGMX_MDMODULE_PLUGINS=ON``.
+
 Electric fields
 ^^^^^^^^^^^^^^^
 

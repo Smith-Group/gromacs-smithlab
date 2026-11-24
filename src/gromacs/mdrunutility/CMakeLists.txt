@@ -76,6 +76,23 @@ target_link_libraries(mdrunutility INTERFACE
 # TODO: Explicitly link specific modules.
 #target_link_libraries(mdrunutility PRIVATE legacy_modules)
 
+# Headers that MDModules plugins need beyond the legacy API, installed
+# when plugins can be loaded
+if(GMX_MDMODULE_PLUGINS)
+    target_sources(mdrunutility
+        INTERFACE
+            FILE_SET mdmodule_plugin_headers
+            TYPE HEADERS
+            BASE_DIRS ${PROJECT_SOURCE_DIR}/src
+            FILES
+                mdmodulesnotifier.h
+                mdmodulesnotifiers.h
+    )
+    if(GMX_INSTALL_LEGACY_API)
+        install(TARGETS mdrunutility FILE_SET mdmodule_plugin_headers DESTINATION include)
+    endif()
+endif()
+
 if (BUILD_TESTING)
     add_subdirectory(tests)
 endif()

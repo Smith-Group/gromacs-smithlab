@@ -44,6 +44,8 @@
 #ifndef GMX_APPLIED_FORCES_QMMMOPTIONS_H
 #define GMX_APPLIED_FORCES_QMMMOPTIONS_H
 
+#include <string_view>
+
 #include "gromacs/mdtypes/imdpoptionprovider.h"
 
 #include "qmmmtypes.h"
@@ -68,6 +70,9 @@ struct QMInputFileName;
 class QMMMOptions final : public IMdpOptionProvider
 {
 public:
+    //! Implementation of IMdpOptionProvider method
+    std::string_view mdpSectionName() const override { return "applied-forces"; }
+
     //! Implementation of IMdpOptionProvider method
     void initMdpTransform(IKeyValueTreeTransformRules* rules) override;
 

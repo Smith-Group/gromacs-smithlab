@@ -146,3 +146,18 @@ for example when constraining water molecules with LINCS, or in coarse-grained m
 Thus, |Gromacs| will no longer throw an error on such systems when specifying ``-update gpu``.
 
 :issue:`5665`
+MDModules can be loaded from plugins
+
+
+A module built outside |Gromacs| can be loaded at run time as a plugin
+by naming it in the new mdp option ``mdmodule-plugins``. |Gromacs|
+looks for the plugin by name in the directories of
+``GMX_MDMODULE_PLUGIN_PATH`` or in the plugin directory of the
+installation, and refuses a plugin built for another major version
+of the plugin interface, another precision or another MPI. A plugin
+built against one release loads on every release with the same major
+version of the interface, which does not change within a release
+series. Building with plugin support needs
+``-DGMX_MDMODULE_PLUGINS=ON``. With ``-DGMX_INSTALL_LEGACY_API=ON`` too,
+|Gromacs| installs the headers that a plugin is built against.
+:issue:`5773`

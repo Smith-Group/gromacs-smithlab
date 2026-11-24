@@ -144,6 +144,23 @@ public:
         }
     }
 
+    /*! \brief Returns the number of subscribers of this notification
+     *
+     * Templated like \p haveSubscribers().
+     */
+    template<typename T>
+    int numSubscribers() const
+    {
+        if constexpr (std::is_same_v<T, CallParameter>)
+        {
+            return static_cast<int>(callBackFunctions_.size());
+        }
+        else
+        {
+            return MDModulesNotifierBase::template numSubscribers<T>();
+        }
+    }
+
 private:
     std::vector<std::function<void(CallParameter)>> callBackFunctions_;
 };

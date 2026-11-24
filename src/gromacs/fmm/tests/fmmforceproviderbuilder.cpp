@@ -84,10 +84,9 @@ protected:
     MDModulesNotifiers         notifiers_;
 
     // default settings
-    MDLogger                logger_;
-    PbcType                 pbcType_ = PbcType::Xyz;
-    gmx_mtop_t              mtop_;
-    MDModulesDirectProvider mdModuleCoulombDirectProvider;
+    MDLogger   logger_;
+    PbcType    pbcType_ = PbcType::Xyz;
+    gmx_mtop_t mtop_;
 };
 
 TEST_F(FmmForceProviderBuilderTest, ThrowsIfBuilderNotReady)
@@ -119,8 +118,6 @@ TEST_F(FmmForceProviderBuilderTest, BuildsWithMinimalSetup)
     fmmModule_ = FmmModuleInfo::create();
     fillOptionsFromMdpValues(mdpOptionsTree, fmmModule_->mdpOptionProvider());
     notifyFmmModuleSimulationSetup();
-    mdModuleCoulombDirectProvider.isDirectProvider = true;
-    notifiers_.simulationSetupNotifier_.notify(&mdModuleCoulombDirectProvider);
 
     if (GMX_USE_EXT_FMM)
     {
@@ -134,22 +131,31 @@ TEST_F(FmmForceProviderBuilderTest, BuildsWithMinimalSetup)
     }
 }
 
-TEST_F(FmmForceProviderBuilderTest, ThrowIfFmmNotNotifiedOfDirectProvider)
+TEST_F(FmmForceProviderBuilderTest, DeclaresDirectCoulombProviderFromOptions)
 {
-    KeyValueTreeBuilder mdpValueBuilder;
-    std::string         fmmActiveBackendKey;
+    std::string fmmActiveBackendKey;
     fmmActiveBackendKey.append(FmmModuleInfo::sc_name);
     fmmActiveBackendKey.append("-");
     fmmActiveBackendKey.append(c_fmmActiveOptionName);
+    std::string directProviderKey;
+    directProviderKey.append(FmmModuleInfo::sc_name);
+    directProviderKey.append("-");
+    directProviderKey.append(c_fmmExaFmmDirectProviderOptionName);
+
+    fmmModule_                       = FmmModuleInfo::create();
+    const auto providesDirectCoulomb = [this]()
+    {
+        MDModuleDescriptor descriptor;
+        fmmModule_->describe(&descriptor);
+        return descriptor.providesDirectCoulomb;
+    };
+    EXPECT_FALSE(providesDirectCoulomb());
+
+    KeyValueTreeBuilder mdpValueBuilder;
     mdpValueBuilder.rootObject().addValue(fmmActiveBackendKey, fmmBackendName(ActiveFmmBackend::ExaFmm));
-    KeyValueTreeObject mdpOptionsTree = mdpValueBuilder.build();
-
-    fmmModule_ = FmmModuleInfo::create();
-    fillOptionsFromMdpValues(mdpOptionsTree, fmmModule_->mdpOptionProvider());
-    notifyFmmModuleSimulationSetup();
-
-    // Expect MDModuleSetupError because the FMM backend was not notified about any direct provider at all
-    EXPECT_THROW(initializeForceProviders(), MDModuleSetupError);
+    mdpValueBuilder.rootObject().addValue(directProviderKey, fmmDirectProviderName(FmmDirectProvider::Fmm));
+    fillOptionsFromMdpValues(mdpValueBuilder.build(), fmmModule_->mdpOptionProvider());
+    EXPECT_TRUE(providesDirectCoulomb());
 }
 
 } // namespace test

@@ -117,6 +117,7 @@
 #include "gromacs/mdlib/tgroup.h"
 #include "gromacs/mdlib/updategroups.h"
 #include "gromacs/mdlib/vsite.h"
+#include "gromacs/mdrun/mdmodulepluginloader.h"
 #include "gromacs/mdrun/mdmodules.h"
 #include "gromacs/mdrun/simulationcontext.h"
 #include "gromacs/mdrun/simulationinput.h"
@@ -136,11 +137,13 @@
 #include "gromacs/mdtypes/fcdata.h"
 #include "gromacs/mdtypes/forcerec.h"
 #include "gromacs/mdtypes/group.h"
+#include "gromacs/mdtypes/iforceprovider.h"
 #include "gromacs/mdtypes/inputrec.h"
 #include "gromacs/mdtypes/interaction_const.h"
 #include "gromacs/mdtypes/locality.h"
 #include "gromacs/mdtypes/md_enums.h"
 #include "gromacs/mdtypes/mdatoms.h"
+#include "gromacs/mdtypes/mdmoduleplugin.h"
 #include "gromacs/mdtypes/mdrunoptions.h"
 #include "gromacs/mdtypes/multipletimestepping.h"
 #include "gromacs/mdtypes/observableshistory.h"
@@ -417,6 +420,7 @@ Mdrunner Mdrunner::cloneOnSpawnedThread() const
     {
         newRunner.restraintManager_ = std::make_unique<RestraintManager>(*restraintManager_);
     }
+    newRunner.mdModuleFactories_ = mdModuleFactories_;
 
     // Copy members of main runner.
     // \todo Replace with builder when Simulation context and/or runner phases are better defined.
@@ -1123,6 +1127,36 @@ int Mdrunner::mdrunner()
         mdModules_->add(RestraintMDModule::sc_name,
                         RestraintMDModule::create(restraint, restraint->sites()));
     }
+    for (const auto& factory : mdModuleFactories_)
+    {
+        mdModules_->add(factory.name, factory.make());
+    }
+    // The plugins that grompp loaded for this tpr, after all other modules
+    if (inputrec->internalParameters != nullptr)
+    {
+        mdModules_->addPlugins(MDModules::recordedPluginNames(*inputrec->internalParameters),
+                               mdModulePluginSearchPath());
+        const GmxHostApiInfo host = hostApiInfo();
+        for (const MDModulePlugin& plugin : mdModules_->plugins())
+        {
+            std::string revision;
+            if (plugin.apiHash != host.apiHash)
+            {
+                revision = formatString(
+                        ", built against revision %016llx of the plugin interface (this GROMACS: "
+                        "%016llx)",
+                        static_cast<unsigned long long>(plugin.apiHash),
+                        static_cast<unsigned long long>(host.apiHash));
+            }
+            GMX_LOG(mdlog.info)
+                    .asParagraph()
+                    .appendTextFormatted("Loaded MDModules plugin %s version %s from %s%s",
+                                         plugin.name.c_str(),
+                                         plugin.version.c_str(),
+                                         plugin.path.c_str(),
+                                         revision.c_str());
+        }
+    }
 
     // TODO: Error handling
     mdModules_->assignOptionsToModules(*inputrec->params, nullptr, inputrec.get());
@@ -1436,6 +1470,7 @@ int Mdrunner::mdrunner()
                 useModularSimulator,
                 doRerun,
                 devFlags.enableGpuVirtualSites,
+                mdModules_->anyModuleAddsForcesAfterPotentialEnergy(),
                 mdlog);
     }
     GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR
@@ -1857,8 +1892,6 @@ int Mdrunner::mdrunner()
         setupNotifier.notify(EnsembleTemperature{ *inputrec });
         PlainPairlistRanges plainPairlistRanges(mtop, *inputrec);
         setupNotifier.notify(&plainPairlistRanges);
-        MDModulesDirectProvider mdModuleCoulombDirectProvider;
-        setupNotifier.notify(&mdModuleCoulombDirectProvider);
 
         /* Initiate forcerecord */
         if (deviceStreamManager != nullptr)
@@ -1871,21 +1904,16 @@ int Mdrunner::mdrunner()
             fr = std::make_unique<t_forcerec>(HostAllocationPolicy{});
         }
         fr->forceProviders = mdModules_->initForceProviders(wcycle.get());
+        GMX_RELEASE_ASSERT(!(useGpuForUpdate && fr->forceProviders->hasPostEnergyProvider()),
+                           "The update runs on the CPU when a module adds forces after the "
+                           "potential energy is known");
 
-        std::optional<bool> anMDModuleProvidesDirectCoulomb = mdModuleCoulombDirectProvider.isDirectProvider;
-        if (setupNotifier.haveSubscribers<MDModulesDirectProvider*>()
-            && !anMDModuleProvidesDirectCoulomb.has_value())
+        // A module that declares that it provides the direct Coulomb interactions
+        // replaces the nonbonded kernels for them; without one, no choice is made.
+        std::optional<bool> anMDModuleProvidesDirectCoulomb;
+        if (mdModules_->anyModuleProvidesDirectCoulomb())
         {
-            GMX_THROW(APIError(
-                    "At least one MD module subscribed to the direct provider notification, "
-                    "but none reported whether it provides direct interactions."));
-        }
-        if (!setupNotifier.haveSubscribers<MDModulesDirectProvider*>()
-            && anMDModuleProvidesDirectCoulomb.has_value())
-        {
-            GMX_THROW(
-                    APIError("No MD module subscribed to the direct provider notification, "
-                             "but direct interactions provider is reported."));
+            anMDModuleProvidesDirectCoulomb = true;
         }
 
         logValidationMessages(mdlog,
@@ -2430,7 +2458,9 @@ int Mdrunner::mdrunner()
                     static_cast<int>(filenames.size()), filenames.data(), inputrec.get(), fr.get()));
             simulatorBuilder.add(ReplicaExchangeParameters(replExParams));
             simulatorBuilder.add(InteractiveMD(imdSession.get()));
-            simulatorBuilder.add(SimulatorModules(mdModules_->outputProvider(), mdModules_->notifiers()));
+            simulatorBuilder.add(SimulatorModules(mdModules_->outputProvider(),
+                                                  mdModules_->notifiers(),
+                                                  mdModules_->anyModuleSharesStateAcrossSimulations()));
             simulatorBuilder.add(CenterOfMassPulling(pull_work));
             // Todo move to an MDModule
             simulatorBuilder.add(IonSwapping(swap.get()));
@@ -2670,6 +2700,8 @@ public:
 
     void addLogFile(t_fileio* logFileHandle);
 
+    void addMDModule(MDModuleFactory factory);
+
     void addStopHandlerBuilder(std::unique_ptr<StopHandlerBuilder> builder);
 
     Mdrunner build();
@@ -2750,6 +2782,9 @@ private:
      * See issue #3379 for broader discussion on API aspects of simulation inputs and outputs.
      */
     SimulationInputHandle inputHolder_;
+
+    //! Make the modules that the caller adds to the built-in ones
+    std::vector<MDModuleFactory> mdModuleFactories_;
 };
 
 Mdrunner::BuilderImplementation::BuilderImplementation(std::unique_ptr<MDModules> mdModules,
@@ -2900,6 +2935,8 @@ Mdrunner Mdrunner::BuilderImplementation::build()
 
     newRunner.restraintManager_ = std::make_unique<RestraintManager>();
 
+    newRunner.mdModuleFactories_ = std::move(mdModuleFactories_);
+
     if (stopHandlerBuilder_)
     {
         newRunner.stopHandlerBuilder_ = std::move(stopHandlerBuilder_);
@@ -2961,6 +2998,11 @@ void Mdrunner::BuilderImplementation::addOutputEnvironment(gmx_output_env_t* out
 void Mdrunner::BuilderImplementation::addLogFile(t_fileio* logFileHandle)
 {
     logFileHandle_ = logFileHandle;
+}
+
+void Mdrunner::BuilderImplementation::addMDModule(MDModuleFactory factory)
+{
+    mdModuleFactories_.push_back(std::move(factory));
 }
 
 void Mdrunner::BuilderImplementation::addStopHandlerBuilder(std::unique_ptr<StopHandlerBuilder> builder)
@@ -3073,6 +3115,12 @@ MdrunnerBuilder& MdrunnerBuilder::addFilenames(ArrayRef<const t_filenm> filename
 MdrunnerBuilder& MdrunnerBuilder::addOutputEnvironment(gmx_output_env_t* outputEnvironment)
 {
     impl_->addOutputEnvironment(outputEnvironment);
+    return *this;
+}
+
+MdrunnerBuilder& MdrunnerBuilder::addMDModule(MDModuleFactory factory)
+{
+    impl_->addMDModule(std::move(factory));
     return *this;
 }
 

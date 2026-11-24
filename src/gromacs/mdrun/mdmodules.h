@@ -42,8 +42,15 @@
 #ifndef GMX_MDRUN_MDMODULES_H
 #define GMX_MDRUN_MDMODULES_H
 
+#include <filesystem>
+#include <functional>
 #include <memory>
+#include <string>
 #include <string_view>
+#include <vector>
+
+#include "gromacs/mdrun/mdmodulepluginloader.h"
+#include "gromacs/utility/arrayref.h"
 
 struct gmx_wallcycle;
 struct t_inputrec;
@@ -62,6 +69,23 @@ class IMDModule;
 class IMDOutputProvider;
 struct MDModulesNotifiers;
 struct OutputControl;
+
+/*! \libinternal \brief
+ * Makes a module that the caller of mdrun adds to the built-in ones
+ *
+ * With thread-MPI each rank has its own MDModules, so each rank makes
+ * its own module.
+ *
+ * \inlibraryapi
+ * \ingroup module_mdrunutility
+ */
+struct MDModuleFactory
+{
+    //! The name the module is added with, see MDModules::add()
+    std::string name;
+    //! Makes the module
+    std::function<std::shared_ptr<IMDModule>()> make;
+};
 
 /*! \libinternal \brief
  * Manages the collection of all modules used for mdrun.
@@ -190,6 +214,11 @@ public:
      * \param[in] wallCycle  Pointer to a wall cycle object, can be nullptr, in which case
      *                       no cycle counting will be performed for force providers.
      * \returns an object for computing forces from the modules.
+     *
+     * \throws APIError if a module adds a force provider for halo atoms
+     *         without declaring MDModuleDescriptor::writesHaloForces, or a hook
+     *         after the potential energy without declaring
+     *         MDModuleDescriptor::addsForcesAfterPotentialEnergy.
      */
     ForceProviders* initForceProviders(gmx_wallcycle* wallCycle);
 
@@ -205,7 +234,12 @@ public:
      *
      * Allows MDModules to subscribe to notifications that are called back
      * during the set up of an MD simulation, after the options were
-     * assigned to the modules.
+     * assigned to the modules. MDModules itself answers MDModulesEnergyTerms
+     * with the energy terms the modules declare.
+     *
+     * \throws APIError When a module subscribes to the multi-simulation
+     *     notification without declaring that it shares state across
+     *     simulations, see MDModuleDescriptor.
      */
     void subscribeToSimulationSetupNotifications();
 
@@ -227,6 +261,11 @@ public:
      * may attempt to use its the interfaces accessible through IMDModule
      * methods.
      *
+     * The module is registered after all modules registered so far,
+     * and is treated like a built-in module: if it provides mdp
+     * options, they are placed in the section of the structured input
+     * that it names with IMdpOptionProvider::mdpSectionName().
+     *
      * \param name   Unique name for this module in the collection
      * \param module Implements some sort of modular functionality for MD.
      *
@@ -239,6 +278,56 @@ public:
      * \throws APIError When a module with the given name is already added
      */
     void add(std::string_view name, std::shared_ptr<IMDModule> module);
+
+    /*! \brief Loads the plugins of the modules \p names and adds their modules.
+     *
+     * The plugins are looked for in \p searchPath, see
+     * mdModulePluginSearchPath(). Their modules are added after all
+     * modules added so far, sorted by name, so the order does not depend
+     * on the order of \p names. A name given twice is loaded once.
+     *
+     * \throws InvalidInputError when a plugin cannot be loaded, see
+     *         loadMDModulePlugin()
+     * \throws APIError when a module with the name of a plugin is already added
+     */
+    void addPlugins(ArrayRef<const std::string> names, ArrayRef<const std::filesystem::path> searchPath);
+
+    //! Returns the plugins loaded by addPlugins(), in the order their modules were added
+    ArrayRef<const MDModulePlugin> plugins() const;
+
+    /*! \brief Writes the name and version of each loaded plugin to \p builder
+     *
+     * grompp writes them to the internal parameters in the tpr, from
+     * which mdrun reads the names with recordedPluginNames(). Nothing is
+     * written when no plugin is loaded.
+     */
+    void writePluginRecord(KeyValueTreeObjectBuilder builder) const;
+
+    //! Returns the names of the plugins that writePluginRecord() wrote to \p internalParameters
+    static std::vector<std::string> recordedPluginNames(const KeyValueTreeObject& internalParameters);
+
+    /*! \brief Returns whether a module declares that it shares state
+     * across the simulations of a multi-simulation run.
+     *
+     * Valid after the options were assigned to the modules.
+     */
+    bool anyModuleSharesStateAcrossSimulations() const;
+
+    /*! \brief Returns whether a module declares that it adds forces
+     * after the potential energy is known.
+     *
+     * Valid after the options were assigned to the modules.
+     */
+    bool anyModuleAddsForcesAfterPotentialEnergy() const;
+
+    /*! \brief Returns whether a module declares that it provides the
+     * direct Coulomb interactions.
+     *
+     * Valid after the options were assigned to the modules.
+     *
+     * \throws APIError When more than one module declares it
+     */
+    bool anyModuleProvidesDirectCoulomb() const;
 
     /*! \brief Return a handle to the notifiers used for callbacks between modules.
      */

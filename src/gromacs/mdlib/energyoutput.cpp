@@ -272,24 +272,13 @@ EnergyOutput::EnergyOutput(ener_file*                fp_ene,
     bEner_[InteractionFunction::CenterOfMassPullingEnergy] =
             ((inputrec.bPull && pull_have_potential(*pull_work)) || inputrec.bRot);
 
-    // Check MDModules for any energy output
-    MDModulesEnergyOutputToDensityFittingRequestChecker mdModulesAddOutputToDensityFittingFieldRequest;
-    mdModulesNotifiers.simulationSetupNotifier_.notify(&mdModulesAddOutputToDensityFittingFieldRequest);
-
-    bEner_[InteractionFunction::DensityFitting] =
-            mdModulesAddOutputToDensityFittingFieldRequest.energyOutputToDensityFitting_;
-
-    MDModulesEnergyOutputToQMMMRequestChecker mdModulesAddOutputToQMMMFieldRequest;
-    mdModulesNotifiers.simulationSetupNotifier_.notify(&mdModulesAddOutputToQMMMFieldRequest);
-
-    bEner_[InteractionFunction::QuantumMechanicalRegionEnergy] =
-            mdModulesAddOutputToQMMMFieldRequest.energyOutputToQMMM_;
-
-    MDModulesEnergyOutputToNNPotRequestChecker mdModulesAddOutputToNNPotFieldRequest;
-    mdModulesNotifiers.simulationSetupNotifier_.notify(&mdModulesAddOutputToNNPotFieldRequest);
-
-    bEner_[InteractionFunction::NeuralNetworkPotentialEnergy] =
-            mdModulesAddOutputToNNPotFieldRequest.energyOutputToNNPot_;
+    // Write the energy terms that MDModules declare
+    MDModulesEnergyTerms mdModulesEnergyTerms;
+    mdModulesNotifiers.simulationSetupNotifier_.notify(&mdModulesEnergyTerms);
+    for (const auto term : mdModulesEnergyTerms.terms_)
+    {
+        bEner_[term] = true;
+    }
 
     // Counting the energy terms that will be printed and saving their names
     std::vector<std::string> ener_nm;

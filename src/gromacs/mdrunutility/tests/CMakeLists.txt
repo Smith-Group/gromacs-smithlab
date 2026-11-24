@@ -37,6 +37,8 @@ target_link_libraries(mdrunutility-test-shared PRIVATE common legacy_api)
 
 gmx_add_unit_test(MdrunUtilityUnitTests mdrunutility-test
     CPP_SOURCE_FILES
+        mdmodules.cpp
+        mdmoduleplugins.cpp
         mdmodulesnotifier.cpp
         plainpairlistranges.cpp
         threadaffinity.cpp
@@ -52,4 +54,29 @@ gmx_add_mpi_unit_test(MdrunUtilityMpiUnitTests mdrunutility-mpi-test 4
 # as well as source files.
 if (GMX_MPI OR (GMX_THREAD_MPI AND GTEST_IS_THREADSAFE))
     target_link_libraries(mdrunutility-mpi-test PRIVATE mdrunutility-test-shared)
+endif()
+
+if (GMX_MDMODULE_PLUGINS)
+    # Plugins that the tests of the plugin loader load, all in one directory
+    set(_testPluginDirectory ${CMAKE_CURRENT_BINARY_DIR}/plugins)
+    function(gmx_add_test_mdmodule_plugin _target _fileName _source)
+        add_library(${_target} MODULE ${_source})
+        set_target_properties(${_target} PROPERTIES
+                              PREFIX ""
+                              OUTPUT_NAME ${_fileName}
+                              LIBRARY_OUTPUT_DIRECTORY ${_testPluginDirectory})
+        target_link_libraries(${_target} PRIVATE common legacy_api legacy_modules utility mdtypes libgromacs)
+        add_dependencies(mdrunutility-test ${_target})
+    endfunction()
+    gmx_add_test_mdmodule_plugin(mdrunutility-test-plugin test-plugin plugins/testplugin.cpp)
+    target_compile_definitions(mdrunutility-test-plugin PRIVATE TEST_PLUGIN_NAME="test-plugin")
+    gmx_add_test_mdmodule_plugin(mdrunutility-test-other-plugin other-test-plugin plugins/testplugin.cpp)
+    target_compile_definitions(mdrunutility-test-other-plugin PRIVATE TEST_PLUGIN_NAME="other-test-plugin")
+    gmx_add_test_mdmodule_plugin(mdrunutility-test-misnamed-plugin misnamed-plugin plugins/testplugin.cpp)
+    target_compile_definitions(mdrunutility-test-misnamed-plugin PRIVATE TEST_PLUGIN_NAME="another-name")
+    gmx_add_test_mdmodule_plugin(mdrunutility-test-incompatible-plugin incompatible-plugin
+                                 plugins/incompatibleplugin.cpp)
+    gmx_add_test_mdmodule_plugin(mdrunutility-test-not-a-plugin not-a-plugin plugins/notaplugin.cpp)
+    target_compile_definitions(mdrunutility-test PRIVATE
+                               TEST_PLUGIN_DIRECTORY="${_testPluginDirectory}")
 endif()
