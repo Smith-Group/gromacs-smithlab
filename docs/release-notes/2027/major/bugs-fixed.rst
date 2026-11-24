@@ -57,3 +57,10 @@ Below are issues fixed in the (`Colvars <https://colvars.github.io>`_) library (
 
 - Improved restart consistency and fixes for multi-replica well-tempered metadynamics (Colvars repo pull request `820 <https://github.com/Colvars/colvars/pull/820>`_)
 - Fixed wrapping of extended-system variable coupled to orientationAngle (Colvars repo pull request `943 <https://github.com/Colvars/colvars/pull/943>`_)
+
+``gmx trjcat -n`` and ``gmx traj -oxt`` write the step and lambda of TRR frames
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+They wrote the number of frames read as the step, and the step as lambda.
+
+:issue:`5154`

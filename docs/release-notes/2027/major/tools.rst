@@ -62,3 +62,11 @@ also useful with other force fields, and none of them changes the output unless 
 Bonds, angles and dihedrals are now found using the periodic boundary condition type
 of the input structure, instead of always assuming full periodicity for angles and
 dihedrals. Output for fully periodic input is unchanged.
+
+Tools that write trajectories can write H5MD
+""""""""""""""""""""""""""""""""""""""""""""
+
+Tools that write trajectories with ``write_trxframe()``, such as :ref:`gmx trjcat`,
+can write H5MD files. The file is set up from the first frame and carries no topology.
+
+:issue:`5154`

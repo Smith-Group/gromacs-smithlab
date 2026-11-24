@@ -38,18 +38,20 @@
 #include <cstdio>
 #include <cstring>
 
+#include <algorithm>
 #include <filesystem>
+#include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
-#include "gromacs/fileio/cifio.h"
-#include "gromacs/fileio/espio.h"
+#include "gromacs/fileio/boxcontainingfile.h"
+#include "gromacs/fileio/fileformatregistry.h"
 #include "gromacs/fileio/filetypes.h"
-#include "gromacs/fileio/g96io.h"
 #include "gromacs/fileio/gmxfio.h"
 #include "gromacs/fileio/groio.h"
-#include "gromacs/fileio/pdbio.h"
+#include "gromacs/fileio/structurefile.h"
 #include "gromacs/fileio/tpxio.h"
-#include "gromacs/fileio/trxio.h"
 #include "gromacs/mdtypes/md_enums.h"
 #include "gromacs/topology/atoms.h"
 #include "gromacs/topology/block.h"
@@ -57,14 +59,55 @@
 #include "gromacs/topology/mtop_util.h"
 #include "gromacs/topology/symtab.h"
 #include "gromacs/topology/topology.h"
-#include "gromacs/trajectory/trajectoryframe.h"
+#include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/cstringutil.h"
+#include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/fatalerror.h"
 #include "gromacs/utility/gmxassert.h"
+#include "gromacs/utility/matrix.h"
 #include "gromacs/utility/smalloc.h"
+#include "gromacs/utility/stringutil.h"
 #include "gromacs/utility/vec.h"
 #include "gromacs/utility/vectypes.h"
+
+namespace
+{
+
+//! Writes a structure with the file object of the format of \p outfile.
+void writeStructure(const std::filesystem::path&            outfile,
+                    const char*                             title,
+                    const t_atoms*                          atoms,
+                    const rvec                              x[],
+                    const rvec*                             v,
+                    PbcType                                 pbcType,
+                    const matrix                            box,
+                    std::optional<gmx::ArrayRef<const int>> selection)
+{
+    std::unique_ptr<gmx::StructureFile> file =
+            gmx::openFileAs<gmx::StructureFile>(outfile, gmx::FileMode::Write);
+    file->setStructure((title != nullptr) ? title : "",
+                       *atoms,
+                       gmx::constArrayRefFromArray(reinterpret_cast<const gmx::RVec*>(x), atoms->nr),
+                       (v != nullptr) ? gmx::constArrayRefFromArray(
+                                                reinterpret_cast<const gmx::RVec*>(v), atoms->nr)
+                                      : gmx::ArrayRef<const gmx::RVec>());
+    if (selection.has_value())
+    {
+        file->setSelection(selection.value());
+    }
+    if (auto* boxFile = dynamic_cast<gmx::BoxContainingFile*>(file.get()))
+    {
+        if (box != nullptr)
+        {
+            boxFile->setBoundaries(gmx::createMatrix3x3FromLegacyMatrix(box));
+        }
+        boxFile->setPbcType(pbcType);
+    }
+    file->write();
+}
+
+} // namespace
 
 void write_sto_conf_indexed(const std::filesystem::path& outfile,
                             const char*                  title,
@@ -76,57 +119,7 @@ void write_sto_conf_indexed(const std::filesystem::path& outfile,
                             int                          nindex,
                             int                          index[])
 {
-    FILE*      out;
-    int        ftp;
-    t_trxframe fr;
-
-    ftp = fn2ftp(outfile);
-    switch (ftp)
-    {
-        case efGRO:
-            out = gmx_fio_fopen(outfile, "w");
-            write_hconf_indexed_p(out, title, atoms, nindex, index, x, v, box);
-            gmx_fio_fclose(out);
-            break;
-        case efG96:
-            clear_trxframe(&fr, TRUE);
-            fr.natoms = atoms->nr;
-            fr.bAtoms = TRUE;
-            fr.atoms  = const_cast<t_atoms*>(atoms);
-            fr.bX     = TRUE;
-            fr.x      = const_cast<rvec*>(x);
-            if (v)
-            {
-                fr.bV = TRUE;
-                fr.v  = const_cast<rvec*>(v);
-            }
-            fr.bBox = TRUE;
-            copy_mat(box, fr.box);
-            out = gmx_fio_fopen(outfile, "w");
-            write_g96_conf(out, title, &fr, nindex, index);
-            gmx_fio_fclose(out);
-            break;
-        case efPDB:
-        case efBRK:
-        case efENT:
-        case efPQR:
-            out = gmx_fio_fopen(outfile, "w");
-            write_pdbfile_indexed(
-                    out, title, atoms, x, pbcType, box, ' ', -1, nindex, index, nullptr, ftp == efPQR);
-            gmx_fio_fclose(out);
-            break;
-        case efCIF:
-            CifIO::writeIndexed(outfile, title, atoms, x, pbcType, box, nindex, index);
-            break;
-        case efESP:
-            out = gmx_fio_fopen(outfile, "w");
-            write_espresso_conf_indexed(out, title, atoms, nindex, index, x, v, box);
-            gmx_fio_fclose(out);
-            break;
-        case efTPR:
-            gmx_fatal(FARGS, "Sorry, can not write a topology to %s", outfile.string().c_str());
-        default: gmx_incons("Not supported in write_sto_conf_indexed");
-    }
+    writeStructure(outfile, title, atoms, x, v, pbcType, box, gmx::constArrayRefFromArray(index, nindex));
 }
 
 void write_sto_conf(const std::filesystem::path& outfile,
@@ -137,49 +130,7 @@ void write_sto_conf(const std::filesystem::path& outfile,
                     PbcType                      pbcType,
                     const matrix                 box)
 {
-    FILE*      out;
-    int        ftp;
-    t_trxframe fr;
-
-    ftp = fn2ftp(outfile);
-    switch (ftp)
-    {
-        case efGRO: write_conf_p(outfile, title, atoms, x, v, box); break;
-        case efG96:
-            clear_trxframe(&fr, TRUE);
-            fr.natoms = atoms->nr;
-            fr.bAtoms = TRUE;
-            fr.atoms  = const_cast<t_atoms*>(atoms); // TODO check
-            fr.bX     = TRUE;
-            fr.x      = const_cast<rvec*>(x);
-            if (v)
-            {
-                fr.bV = TRUE;
-                fr.v  = const_cast<rvec*>(v);
-            }
-            fr.bBox = TRUE;
-            copy_mat(box, fr.box);
-            out = gmx_fio_fopen(outfile, "w");
-            write_g96_conf(out, title, &fr, -1, nullptr);
-            gmx_fio_fclose(out);
-            break;
-        case efPDB:
-        case efBRK:
-        case efENT:
-            out = gmx_fio_fopen(outfile, "w");
-            write_pdbfile(out, title, atoms, x, pbcType, box, ' ', -1, nullptr);
-            gmx_fio_fclose(out);
-            break;
-        case efCIF: CifIO::write(outfile, title, atoms, x, pbcType, box); break;
-        case efESP:
-            out = gmx_fio_fopen(outfile, "w");
-            write_espresso_conf_indexed(out, title, atoms, atoms->nr, nullptr, x, v, box);
-            gmx_fio_fclose(out);
-            break;
-        case efTPR:
-            gmx_fatal(FARGS, "Sorry, can not write a topology to %s", outfile.string().c_str());
-        default: gmx_incons("Not supported in write_sto_conf");
-    }
+    writeStructure(outfile, title, atoms, x, v, pbcType, box, std::nullopt);
 }
 
 void write_sto_conf_mtop(const std::filesystem::path& outfile,
@@ -190,118 +141,89 @@ void write_sto_conf_mtop(const std::filesystem::path& outfile,
                          PbcType                      pbcType,
                          const matrix                 box)
 {
-    int     ftp;
-    FILE*   out;
-    t_atoms atoms;
-
-    ftp = fn2ftp(outfile);
-    switch (ftp)
+    if (fn2ftp(outfile) == efGRO)
     {
-        case efGRO:
-            out = gmx_fio_fopen(outfile, "w");
-            write_hconf_mtop(out, title, mtop, x, v, box);
-            gmx_fio_fclose(out);
-            break;
-        default:
-            /* This is a brute force approach which requires a lot of memory.
-             * We should implement mtop versions of all writing routines.
-             */
-            atoms = gmx_mtop_global_atoms(mtop);
+        /* The GRO writer reads mtop directly, without the global atoms. */
+        FILE* out = gmx_fio_fopen(outfile, "w");
+        write_hconf_mtop(out, title, mtop, x, v, box);
+        gmx_fio_fclose(out);
+    }
+    else
+    {
+        /* This is a brute force approach which requires a lot of memory.
+         * We should implement mtop versions of all writing routines.
+         */
+        t_atoms atoms = gmx_mtop_global_atoms(mtop);
 
-            write_sto_conf(outfile, title, &atoms, x, v, pbcType, box);
+        write_sto_conf(outfile, title, &atoms, x, v, pbcType, box);
 
-            done_atom(&atoms);
-            break;
+        done_atom(&atoms);
     }
 }
 
-static void get_stx_coordnum(const std::filesystem::path& infile, int* natoms)
+/*! \brief
+ * Copies \p source into \p atoms, with every name put in \p symtab.
+ *
+ * Names are put in the order the readers put them: the name of a residue
+ * before the names of its particles.
+ */
+static void copyAtoms(const t_atoms& source, t_symtab* symtab, t_atoms* atoms)
 {
-    FILE*      in;
-    int        ftp;
-    t_trxframe fr;
-    char       g96_line[STRLEN + 1];
-
-    ftp = fn2ftp(infile);
-    range_check(ftp, 0, efNR);
-    switch (ftp)
+    init_t_atoms(atoms, source.nr, source.pdbinfo != nullptr);
+    atoms->nres = source.nres;
+    std::vector<bool> residueCopied(source.nres, false);
+    auto              copyResidue = [&](int residue)
     {
-        case efGRO: get_coordnum(infile, natoms); break;
-        case efG96:
+        atoms->resinfo[residue]      = source.resinfo[residue];
+        atoms->resinfo[residue].name = put_symtab(symtab, *source.resinfo[residue].name);
+        if (source.resinfo[residue].rtp != nullptr)
         {
-            in        = gmx_fio_fopen(infile, "r");
-            fr.natoms = -1;
-            fr.atoms  = nullptr;
-            fr.x      = nullptr;
-            fr.v      = nullptr;
-            fr.f      = nullptr;
-            *natoms   = read_g96_conf(in, infile, nullptr, &fr, nullptr, g96_line);
-            gmx_fio_fclose(in);
-            break;
+            atoms->resinfo[residue].rtp = put_symtab(symtab, *source.resinfo[residue].rtp);
         }
-        case efPDB:
-        case efBRK:
-        case efENT:
-            in = gmx_fio_fopen(infile, "r");
-            get_pdb_coordnum(in, natoms);
-            gmx_fio_fclose(in);
-            break;
-        case efCIF: CifIO::countAtoms(infile, natoms); break;
-        case efESP: *natoms = get_espresso_coordnum(infile); break;
-        default: gmx_fatal(FARGS, "File type %s not supported in get_stx_coordnum", ftp2ext(ftp));
-    }
-}
-
-static void read_stx_conf(const std::filesystem::path& infile,
-                          t_symtab*                    symtab,
-                          char**                       name,
-                          t_atoms*                     atoms,
-                          rvec                         x[],
-                          rvec*                        v,
-                          PbcType*                     pbcType,
-                          matrix                       box)
-{
-    FILE*      in;
-    t_trxframe fr;
-    int        ftp;
-    char       g96_line[STRLEN + 1];
-
-    if (atoms->nr == 0)
+        residueCopied[residue] = true;
+    };
+    if (source.atomtype != nullptr)
     {
-        fprintf(stderr, "Warning: Number of atoms in %s is 0\n", infile.string().c_str());
+        snew(atoms->atomtype, source.nr);
     }
-    else if (atoms->atom == nullptr)
+    if (source.atomtypeB != nullptr)
     {
-        gmx_mem("Uninitialized array atom");
+        snew(atoms->atomtypeB, source.nr);
     }
-
-    if (pbcType)
+    for (int i = 0; i < source.nr; i++)
     {
-        *pbcType = PbcType::Unset;
+        atoms->atom[i]    = source.atom[i];
+        const int residue = source.atom[i].resind;
+        if (residue < source.nres && !residueCopied[residue])
+        {
+            copyResidue(residue);
+        }
+        atoms->atomname[i] = put_symtab(symtab, *source.atomname[i]);
+        if (source.atomtype != nullptr)
+        {
+            atoms->atomtype[i] = put_symtab(symtab, *source.atomtype[i]);
+        }
+        if (source.atomtypeB != nullptr)
+        {
+            atoms->atomtypeB[i] = put_symtab(symtab, *source.atomtypeB[i]);
+        }
+        if (source.pdbinfo != nullptr)
+        {
+            atoms->pdbinfo[i] = source.pdbinfo[i];
+        }
     }
-
-    ftp = fn2ftp(infile);
-    switch (ftp)
+    for (int residue = 0; residue < source.nres; residue++)
     {
-        case efGRO: gmx_gro_read_conf(infile, symtab, name, atoms, x, v, box); break;
-        case efG96:
-            fr.natoms = atoms->nr;
-            fr.atoms  = atoms;
-            fr.x      = x;
-            fr.v      = v;
-            fr.f      = nullptr;
-            in        = gmx_fio_fopen(infile, "r");
-            read_g96_conf(in, infile, name, &fr, symtab, g96_line);
-            gmx_fio_fclose(in);
-            copy_mat(fr.box, box);
-            break;
-        case efPDB:
-        case efBRK:
-        case efENT: gmx_pdb_read_conf(infile, symtab, name, atoms, x, pbcType, box); break;
-        case efCIF: CifIO::read(infile, symtab, name, atoms, x, pbcType, box); break;
-        case efESP: gmx_espresso_read_conf(infile, symtab, name, atoms, x, v, box); break;
-        default: gmx_incons("Not supported in read_stx_conf");
+        if (!residueCopied[residue])
+        {
+            copyResidue(residue);
+        }
     }
+    atoms->haveMass    = source.haveMass;
+    atoms->haveCharge  = source.haveCharge;
+    atoms->haveType    = source.haveType;
+    atoms->haveBState  = source.haveBState;
+    atoms->havePdbInfo = source.havePdbInfo;
 }
 
 void readConfAndAtoms(const std::filesystem::path& infile,
@@ -334,27 +256,55 @@ void readConfAndAtoms(const std::filesystem::path& infile,
         return;
     }
 
-    int natoms;
-    get_stx_coordnum(infile, &natoms);
-
-    init_t_atoms(atoms, natoms, (fn2ftp(infile) == efPDB || fn2ftp(infile) == efCIF));
-
-    bool xIsNull = false;
-    if (x == nullptr)
+    std::unique_ptr<gmx::StructureFile> file =
+            gmx::openFileAs<gmx::StructureFile>(infile, gmx::FileMode::Read);
+    file->read();
+    const int natoms = file->getNumAtoms();
+    if (natoms == 0)
     {
-        snew(x, 1);
-        xIsNull = true;
+        fprintf(stderr, "Warning: Number of atoms in %s is 0\n", infile.string().c_str());
     }
-    snew(*x, natoms);
-    if (v)
+    if (file->getAtoms() == nullptr)
+    {
+        GMX_THROW(gmx::InvalidInputError(
+                gmx::formatString("%s files carry no particle names, so %s cannot be used here",
+                                  file->formatName(),
+                                  infile.string().c_str())));
+    }
+    copyAtoms(*file->getAtoms(), symtab, atoms);
+    if (name != nullptr)
+    {
+        *name = gmx_strdup(file->getTitle().c_str());
+    }
+    if (x != nullptr)
+    {
+        snew(*x, natoms);
+        std::copy(file->getPositions().begin(),
+                  file->getPositions().end(),
+                  reinterpret_cast<gmx::RVec*>(*x));
+    }
+    if (v != nullptr)
     {
         snew(*v, natoms);
+        std::copy(file->getVelocities().begin(),
+                  file->getVelocities().end(),
+                  reinterpret_cast<gmx::RVec*>(*v));
     }
-    read_stx_conf(infile, symtab, name, atoms, *x, (v == nullptr) ? nullptr : *v, pbcType, box);
-    if (xIsNull)
+    clear_mat(box);
+    if (pbcType != nullptr)
     {
-        sfree(*x);
-        sfree(x);
+        *pbcType = PbcType::Unset;
+    }
+    if (const auto* boxFile = dynamic_cast<const gmx::BoxContainingFile*>(file.get()))
+    {
+        if (boxFile->getBoundaries().has_value())
+        {
+            gmx::fillLegacyMatrix(boxFile->getBoundaries().value(), box);
+        }
+        if (pbcType != nullptr)
+        {
+            *pbcType = boxFile->getPbcType();
+        }
     }
 }
 

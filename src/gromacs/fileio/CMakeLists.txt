@@ -39,6 +39,8 @@ set(FILEIO_SOURCES
     confio.cpp
     enxio.cpp
     espio.cpp
+    file.cpp
+    fileformatregistry.cpp
     filetypes.cpp
     g96io.cpp
     gmxfio.cpp
@@ -54,8 +56,11 @@ set(FILEIO_SOURCES
     oenv.cpp
     pdbio.cpp
     readinp.cpp
+    structurefileformats.cpp
     tngio.cpp
+    topfile.cpp
     tpxio.cpp
+    trajectoryfileformats.cpp
     trrio.cpp
     trxio.cpp
     vmdio.cpp

@@ -41,6 +41,7 @@ gmx_add_unit_test(FileIOTests fileio-test
         cifio_trajectory.cpp
         conect.cpp
         confio.cpp
+        fileformatregistry.cpp
         filemd5.cpp
         filetypes.cpp
         matio.cpp
@@ -48,7 +49,10 @@ gmx_add_unit_test(FileIOTests fileio-test
         mrcdensitymap.cpp
         mrcdensitymapheader.cpp
         readinp.cpp
+        structurefileformats.cpp
         ${tng_sources}
+        topfile.cpp
+        trajectoryfileformats.cpp
         trxio.cpp
         xdr_serializer.cpp
         xtcio.cpp
